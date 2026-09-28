@@ -4,8 +4,10 @@ WORKDIR /app
 
 # Vite compila las variables VITE_* dentro del bundle en este paso — hay que
 # pasarla como build arg, no alcanza con tenerla en el .env local (que ni siquiera
-# se sube al build, está en .dockerignore).
-ARG VITE_API_URL
+# se sube al build, está en .dockerignore). Queda con la URL de producción como
+# valor por defecto, así funciona aunque Dockploy no exponga un campo de Build Args;
+# si algún día se quiere apuntar a otro backend, se sobreescribe pasando el build arg.
+ARG VITE_API_URL=https://gastos-back.vertigs.net/api
 ENV VITE_API_URL=$VITE_API_URL
 
 COPY package.json package-lock.json ./
