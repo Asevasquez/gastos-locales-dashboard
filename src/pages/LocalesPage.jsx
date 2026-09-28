@@ -23,7 +23,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import BlockIcon from '@mui/icons-material/Block';
 import { listarLocales, crearLocal, actualizarLocal, eliminarLocal } from '../services/locales';
 
-const MARCAS = ['KAMI_SUSHI', 'LATIN_PIZZA', 'KELVER'];
+const MARCAS = ['KAMI_SUSHI', 'LATIN_PIZZA'];
 const FORM_VACIO = { nombre: '', marca: 'KAMI_SUSHI', direccion: '', codigoExterno: '' };
 
 export default function LocalesPage() {

@@ -46,7 +46,7 @@ export default function LoginPage() {
           Gastos de Locales
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={3}>
-          Ingresa con tu cuenta PCM
+          Ingresa con tu cuenta
         </Typography>
 
         <form onSubmit={manejarSubmit}>
