@@ -26,9 +26,11 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
 import * as XLSX from 'xlsx';
-import { listarGastos, obtenerResumen, obtenerPorCuentaContable } from '../services/gastos';
+import { listarGastos, obtenerResumen, obtenerPorCuentaContable, eliminarGasto } from '../services/gastos';
 import { listarLocales } from '../services/locales';
+import { useAuth } from '../context/AuthContext';
 
 function mesActual() {
   const ahora = new Date();
@@ -89,6 +91,7 @@ const MESES_ES = [
 ];
 
 export default function GastosPage() {
+  const { usuario } = useAuth();
   const [periodo, setPeriodo] = useState('mes'); // 'mes' | 'semana'
   const [mes, setMes] = useState(mesActual());
   const [diaDeLaSemana, setDiaDeLaSemana] = useState(new Date().toISOString().slice(0, 10));
@@ -140,6 +143,20 @@ export default function GastosPage() {
       setPorCuentaContable(cuentaContableData.porCuentaContable || []);
     } finally {
       setCargando(false);
+    }
+  }
+
+  async function manejarEliminarGasto(gasto) {
+    const confirmado = window.confirm(
+      `¿Eliminar el gasto de "${gasto.productoNombre}" por ${formatearPesos(gasto.monto)}? Esta acción no se puede deshacer.`
+    );
+    if (!confirmado) return;
+
+    try {
+      await eliminarGasto(gasto._id);
+      cargarTodo();
+    } catch (err) {
+      alert(err.response?.data?.error || 'No se pudo eliminar el gasto');
     }
   }
 
@@ -350,6 +367,7 @@ export default function GastosPage() {
                     <TableCell align="right">Monto</TableCell>
                     <TableCell>Medio de pago</TableCell>
                     <TableCell align="center">Boleta</TableCell>
+                    {usuario?.rol === 'MASTER' && <TableCell align="center">Eliminar</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -388,11 +406,18 @@ export default function GastosPage() {
                           <ReceiptIcon fontSize="small" />
                         </IconButton>
                       </TableCell>
+                      {usuario?.rol === 'MASTER' && (
+                        <TableCell align="center">
+                          <IconButton size="small" onClick={() => manejarEliminarGasto(g)} color="error">
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                   {gastos.length === 0 && !cargando && (
                     <TableRow>
-                      <TableCell colSpan={8} align="center" sx={{ color: 'text.secondary', py: 4 }}>
+                      <TableCell colSpan={usuario?.rol === 'MASTER' ? 9 : 8} align="center" sx={{ color: 'text.secondary', py: 4 }}>
                         Sin gastos registrados en este período.
                       </TableCell>
                     </TableRow>

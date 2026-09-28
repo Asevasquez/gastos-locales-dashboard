@@ -5,6 +5,11 @@ export async function listarGastos(params) {
   return data;
 }
 
+export async function eliminarGasto(id) {
+  const { data } = await api.delete(`/gastos/${id}`);
+  return data;
+}
+
 export async function obtenerResumen(params) {
   const { data } = await api.get('/gastos/estadisticas/resumen', { params });
   return data;
