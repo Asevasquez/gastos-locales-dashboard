@@ -179,15 +179,19 @@ export default function GastosPage() {
     return opcionesMeses().find((o) => o.valor === mes)?.etiqueta;
   }
 
-  // Exporta en el formato de la planilla de referencia: FECHA, ITEM, DETALLE
-  // (cantidad + unidad - motivo, ej. "5 KG - Se acabó el arroz"), MONTO, ESTATUS,
-  // ESTE MES, ITEM (= cuenta contable en mayúsculas), RATIO, CUENTA CONTABLE, MES,
-  // MEDIO DE PAGO. ESTATUS/ESTE MES quedan en blanco: no hay con qué llenarlas de
-  // forma confiable desde el sistema.
+  // Exporta en el formato de la planilla de referencia, precedido por la identificación
+  // del local: ID LOCAL, NOMBRE LOCAL, FECHA, ITEM, DETALLE (cantidad + unidad - motivo,
+  // ej. "5 KG - Se acabó el arroz"), MONTO, ESTATUS, ESTE MES, ITEM (= cuenta contable
+  // en mayúsculas), RATIO, CUENTA CONTABLE, MES, MEDIO DE PAGO. ESTATUS/ESTE MES quedan
+  // en blanco: no hay con qué llenarlas de forma confiable desde el sistema.
+  // ID LOCAL es el "Código externo" del local (se edita en la pantalla Locales); queda
+  // vacío para los locales que no tengan uno cargado.
   function exportarExcel() {
     const filas = gastos.map((g) => {
       const fecha = new Date(g.fecha);
       return {
+        'ID LOCAL': g.local?.codigoExterno || '',
+        'NOMBRE LOCAL': g.local?.nombre || '',
         FECHA: fecha.toLocaleDateString('es-CL'),
         ITEM: g.productoNombre,
         DETALLE: `${g.cantidad} ${g.unidadMedida} - ${g.motivo}`,

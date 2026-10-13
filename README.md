@@ -18,10 +18,12 @@ npm run dev
   calcula de lunes a domingo a partir de cualquier día que elijas), filtro de local,
   filtro de medio de pago, tarjetas resumen, tabla de últimos gastos (con Cuenta
   Contable y Medio de Pago), gasto por categoría, locales sin registrar, gasto por
-  cuenta contable, y exportación a Excel en el formato exacto que usa la planilla de
-  referencia (columnas FECHA, COL1, ITEM, MONTO, ESTATUS, ESTE MES, ITEM, RATIO,
-  CUENTA CONTABLE, MES, MEDIO DE PAGO — las tres columnas sin equivalente en el
-  sistema, COL1/ESTATUS/ESTE MES, quedan en blanco).
+  cuenta contable, y exportación a Excel (respeta el período, local y medio de pago
+  filtrados) con las columnas: ID LOCAL, NOMBRE LOCAL, FECHA, ITEM, DETALLE (cantidad +
+  unidad - motivo), MONTO, ESTATUS, ESTE MES, ITEM (= cuenta contable en mayúsculas),
+  RATIO, CUENTA CONTABLE, MES, MEDIO DE PAGO. ESTATUS y ESTE MES quedan en blanco.
+  ID LOCAL es el "Código externo" del local (editable en la pantalla Locales); queda
+  vacío si el local no tiene uno cargado.
 - `src/pages/CatalogoPage.jsx` — MASTER sube el Excel del catálogo (ITEM, DETALLE
   opcional, RATIO, CUENTA CONTABLE); reemplaza lo que antes era la sincronización
   con Bsale.
@@ -37,6 +39,6 @@ con la imagen completa (`fotoBoletaUrl`).
 
 - **Seguridad de `/uploads`**: las fotos de boletas siguen siendo estáticas y públicas
   por URL (nombre de archivo no adivinable, pero sin requerir sesión para verlo).
-- **COL1 / ESTATUS / ESTE MES** en la exportación: quedan en blanco porque no está
-  claro qué debían contener en la planilla de referencia — si tienen un propósito
-  específico (fórmulas, estado de conciliación, etc.), hay que definirlo y agregarlo.
+- **ESTATUS / ESTE MES** en la exportación: quedan en blanco porque no está claro qué
+  debían contener en la planilla de referencia — si tienen un propósito específico
+  (fórmulas, estado de conciliación, etc.), hay que definirlo y agregarlo.
