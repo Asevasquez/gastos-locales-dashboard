@@ -16,7 +16,6 @@ import {
   TextField,
   MenuItem,
   Chip,
-  Autocomplete,
   IconButton
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -31,8 +30,10 @@ import {
   eliminarUsuario
 } from '../services/usuarios';
 import { listarLocales } from '../services/locales';
+import SelectorLocales from '../components/SelectorLocales';
 
 const ROLES = ['MASTER', 'ADMINISTRADOR', 'ANALISTA'];
+// localesAsignados es siempre un array de ids (strings), no de objetos.
 const FORM_VACIO = { nombre: '', email: '', password: '', rol: 'ADMINISTRADOR', localesAsignados: [] };
 
 export default function UsuariosPage() {
@@ -45,6 +46,8 @@ export default function UsuariosPage() {
   const [error, setError] = useState('');
 
   const [editandoLocalesDe, setEditandoLocalesDe] = useState(null);
+  const [seleccionLocales, setSeleccionLocales] = useState([]); // ids
+  const [guardandoLocales, setGuardandoLocales] = useState(false);
 
   useEffect(() => {
     cargar();
@@ -70,7 +73,7 @@ export default function UsuariosPage() {
       email: usuario.email,
       password: '',
       rol: usuario.rol,
-      localesAsignados: usuario.localesAsignados || []
+      localesAsignados: []
     });
     setError('');
     setAbierto(true);
@@ -84,7 +87,7 @@ export default function UsuariosPage() {
         if (form.password) payload.password = form.password;
         await actualizarUsuario(editando._id, payload);
       } else {
-        await crearUsuario({ ...form, localesAsignados: form.localesAsignados.map((l) => l._id) });
+        await crearUsuario(form);
       }
       setAbierto(false);
       cargar();
@@ -99,13 +102,35 @@ export default function UsuariosPage() {
     cargar();
   }
 
-  async function guardarLocalesAsignados(nuevaSeleccion) {
-    await asignarLocales(
-      editandoLocalesDe._id,
-      nuevaSeleccion.map((l) => l._id)
-    );
-    setEditandoLocalesDe(null);
-    cargar();
+  function abrirAsignacion(usuario) {
+    // Solo se precargan los locales que siguen activos (los que aparecen en el selector);
+    // si el usuario tenía asignado uno ya desactivado, se descarta al guardar.
+    const idsActivos = new Set(locales.map((l) => l._id));
+    setSeleccionLocales((usuario.localesAsignados || []).map((l) => l._id).filter((id) => idsActivos.has(id)));
+    setEditandoLocalesDe(usuario);
+  }
+
+  async function guardarLocalesAsignados() {
+    setGuardandoLocales(true);
+    try {
+      await asignarLocales(editandoLocalesDe._id, seleccionLocales);
+      setEditandoLocalesDe(null);
+      cargar();
+    } finally {
+      setGuardandoLocales(false);
+    }
+  }
+
+  // Texto compacto para la tabla: "Todos (N)" si tiene todos los locales activos,
+  // los nombres si son pocos, o los primeros 3 + "+N más".
+  function resumenLocales(usuario) {
+    if (usuario.rol === 'MASTER') return 'Todos';
+    const asignados = usuario.localesAsignados || [];
+    if (asignados.length === 0) return '—';
+    if (locales.length > 0 && asignados.length >= locales.length) return `Todos (${asignados.length})`;
+    const nombres = asignados.map((l) => l.nombre);
+    if (nombres.length <= 3) return nombres.join(', ');
+    return `${nombres.slice(0, 3).join(', ')} +${nombres.length - 3} más`;
   }
 
   return (
@@ -138,14 +163,12 @@ export default function UsuariosPage() {
                 <TableCell>
                   <Chip size="small" label={u.rol} />
                 </TableCell>
-                <TableCell>
-                  {u.rol === 'MASTER'
-                    ? 'Todos'
-                    : u.localesAsignados?.map((l) => l.nombre).join(', ') || '—'}
+                <TableCell title={(u.localesAsignados || []).map((l) => l.nombre).join(', ')}>
+                  {resumenLocales(u)}
                 </TableCell>
                 <TableCell align="right">
                   {u.rol !== 'MASTER' && (
-                    <IconButton size="small" onClick={() => setEditandoLocalesDe(u)}>
+                    <IconButton size="small" onClick={() => abrirAsignacion(u)}>
                       <PlaceIcon fontSize="small" />
                     </IconButton>
                   )}
@@ -170,7 +193,7 @@ export default function UsuariosPage() {
       </Paper>
 
       {/* Crear / editar usuario */}
-      <Dialog open={abierto} onClose={() => setAbierto(false)} fullWidth maxWidth="xs">
+      <Dialog open={abierto} onClose={() => setAbierto(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editando ? 'Editar usuario' : 'Nuevo usuario'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <TextField
@@ -178,6 +201,7 @@ export default function UsuariosPage() {
             value={form.nombre}
             onChange={(e) => setForm({ ...form, nombre: e.target.value })}
             fullWidth
+            sx={{ mt: 1 }}
           />
           <TextField
             label="Email"
@@ -206,15 +230,18 @@ export default function UsuariosPage() {
               </MenuItem>
             ))}
           </TextField>
+
           {!editando && form.rol !== 'MASTER' && (
-            <Autocomplete
-              multiple
-              options={locales}
-              getOptionLabel={(l) => l.nombre}
-              value={form.localesAsignados}
-              onChange={(e, val) => setForm({ ...form, localesAsignados: val })}
-              renderInput={(params) => <TextField {...params} label="Locales asignados" />}
-            />
+            <Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5 }}>
+                Locales asignados
+              </Typography>
+              <SelectorLocales
+                locales={locales}
+                seleccionados={form.localesAsignados}
+                onChange={(ids) => setForm({ ...form, localesAsignados: ids })}
+              />
+            </Box>
           )}
           {editando && form.rol !== 'MASTER' && (
             <Typography variant="caption" color="text.secondary">
@@ -239,24 +266,21 @@ export default function UsuariosPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Editar locales asignados de un usuario existente — mismo patrón que
-          AsignarLocales.jsx de KamiSushi Supervisión */}
-      <Dialog open={!!editandoLocalesDe} onClose={() => setEditandoLocalesDe(null)} fullWidth maxWidth="xs">
+      {/* Asignar locales a un usuario existente */}
+      <Dialog open={!!editandoLocalesDe} onClose={() => setEditandoLocalesDe(null)} fullWidth maxWidth="sm">
         <DialogTitle>Locales de {editandoLocalesDe?.nombre}</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
-          <Autocomplete
-            multiple
-            options={locales}
-            getOptionLabel={(l) => l.nombre}
-            value={locales.filter((l) =>
-              editandoLocalesDe?.localesAsignados?.some((a) => a._id === l._id)
-            )}
-            onChange={(e, val) => guardarLocalesAsignados(val)}
-            renderInput={(params) => <TextField {...params} label="Locales asignados" autoFocus />}
+          <SelectorLocales
+            locales={locales}
+            seleccionados={seleccionLocales}
+            onChange={setSeleccionLocales}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditandoLocalesDe(null)}>Cerrar</Button>
+          <Button onClick={() => setEditandoLocalesDe(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={guardarLocalesAsignados} disabled={guardandoLocales}>
+            {guardandoLocales ? 'Guardando…' : 'Guardar'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
