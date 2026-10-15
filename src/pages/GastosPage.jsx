@@ -32,6 +32,18 @@ import { listarGastos, obtenerResumen, obtenerPorCuentaContable, eliminarGasto }
 import { listarLocales } from '../services/locales';
 import { useAuth } from '../context/AuthContext';
 
+// Día de calendario en hora LOCAL como "YYYY-MM-DD". No usar toISOString(): convierte a UTC y,
+// en Chile, de noche devuelve el día siguiente.
+function fechaLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// La fecha de un gasto se guarda como día de calendario (medianoche UTC): hay que leerla
+// en UTC, de lo contrario en Chile aparecería un día antes (y el MES del 1° saldría mal).
+function formatearFechaGasto(valor) {
+  return new Date(valor).toLocaleDateString('es-CL', { timeZone: 'UTC' });
+}
+
 function mesActual() {
   const ahora = new Date();
   return `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
@@ -58,7 +70,7 @@ function rangoSemana(fechaISO) {
   lunes.setDate(fecha.getDate() + offsetLunes);
   const domingo = new Date(lunes);
   domingo.setDate(lunes.getDate() + 6);
-  const aISO = (d) => d.toISOString().slice(0, 10);
+  const aISO = fechaLocalISO;
   return { desde: aISO(lunes), hasta: aISO(domingo) };
 }
 
@@ -94,7 +106,7 @@ export default function GastosPage() {
   const { usuario } = useAuth();
   const [periodo, setPeriodo] = useState('mes'); // 'mes' | 'semana'
   const [mes, setMes] = useState(mesActual());
-  const [diaDeLaSemana, setDiaDeLaSemana] = useState(new Date().toISOString().slice(0, 10));
+  const [diaDeLaSemana, setDiaDeLaSemana] = useState(fechaLocalISO(new Date()));
 
   const [locales, setLocales] = useState([]);
   const [localesSeleccionados, setLocalesSeleccionados] = useState([]);
@@ -192,7 +204,7 @@ export default function GastosPage() {
       return {
         'ID LOCAL': g.local?.codigoExterno || '',
         'NOMBRE LOCAL': g.local?.nombre || '',
-        FECHA: fecha.toLocaleDateString('es-CL'),
+        FECHA: formatearFechaGasto(g.fecha),
         ITEM: g.productoNombre,
         DETALLE: `${g.cantidad} ${g.unidadMedida} - ${g.motivo}`,
         MONTO: g.monto,
@@ -201,7 +213,7 @@ export default function GastosPage() {
         ITEM_2: g.cuentaContable?.toUpperCase() || '',
         RATIO: g.categoria,
         'CUENTA CONTABLE': g.cuentaContable,
-        MES: MESES_ES[fecha.getMonth()],
+        MES: MESES_ES[fecha.getUTCMonth()],
         'MEDIO DE PAGO': ETIQUETA_MEDIO_PAGO[g.medioPago] || g.medioPago
       };
     });
@@ -377,7 +389,7 @@ export default function GastosPage() {
                 <TableBody>
                   {gastos.slice(0, 10).map((g) => (
                     <TableRow key={g._id}>
-                      <TableCell>{new Date(g.fecha).toLocaleDateString('es-CL')}</TableCell>
+                      <TableCell>{formatearFechaGasto(g.fecha)}</TableCell>
                       <TableCell>{g.local?.nombre}</TableCell>
                       <TableCell>{g.productoNombre}</TableCell>
                       <TableCell>
