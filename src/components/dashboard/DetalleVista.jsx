@@ -10,6 +10,7 @@ import { listarGastos, eliminarGasto } from '../../services/gastos';
 import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Tarjeta, clp, humanizar } from './comunes';
 import { formatearFechaGasto } from '../../utils/fechas';
 import { puedeEliminarGasto } from '../../utils/permisos';
+import { SIN_REPETIDOS, claveRepetido, detectarRepetidos } from '../../utils/duplicados';
 
 const MOTIVO_MIN = 3;
 
@@ -55,19 +56,27 @@ export function DialogEliminarGasto({ gasto, onCancelar, onConfirmar, enviando =
 
 // Tabla de gastos (pura: recibe los gastos ya cargados). Búsqueda y paginación en el navegador.
 // `puedeEliminar(gasto)` decide si se muestra el botón de eliminar, al lado de la boleta.
-export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar }) {
+export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, repetidos = SIN_REPETIDOS }) {
+  const [soloRepetidos, setSoloRepetidos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(25);
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return gastos;
-    return gastos.filter((g) =>
+    let lista = gastos;
+    if (soloRepetidos) {
+      // los repetidos quedan agrupados (los idénticos juntos, el más antiguo primero)
+      lista = gastos
+        .filter((g) => repetidos.porId.has(g._id))
+        .sort((a, b) => claveRepetido(a).localeCompare(claveRepetido(b)) || new Date(a.createdAt) - new Date(b.createdAt));
+    }
+    if (!q) return lista;
+    return lista.filter((g) =>
       [g.local?.nombre, g.productoNombre, g.motivo, g.cuentaContable, g.categoria, g.usuario?.nombre]
         .some((v) => v && String(v).toLowerCase().includes(q))
     );
-  }, [gastos, busqueda]);
+  }, [gastos, busqueda, soloRepetidos, repetidos]);
 
   const visibles = filtrados.slice(pagina * porPagina, pagina * porPagina + porPagina);
   const total = filtrados.reduce((a, g) => a + g.monto, 0);
@@ -87,6 +96,20 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar })
         />
       }
     >
+      {repetidos.grupos > 0 && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => { setSoloRepetidos((v) => !v); setPagina(0); }}>
+              {soloRepetidos ? 'Ver todos' : `Ver solo repetidos (${repetidos.filas})`}
+            </Button>
+          }
+        >
+          {repetidos.filas} gastos parecen repetidos ({repetidos.grupos} {repetidos.grupos === 1 ? 'grupo' : 'grupos'} de gastos idénticos):
+          {' '}{repetidos.sobrantes === 1 ? 'sobraría 1' : `sobrarían ${repetidos.sobrantes}`}, por {clp(repetidos.montoSobrante)}. Revísalos y elimina los que sobren.
+        </Alert>
+      )}
       <Box sx={{ overflowX: 'auto' }}>
         <Table size="small" sx={{ minWidth: 1150 }}>
           <TableHead>
@@ -111,6 +134,13 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar })
                 <TableCell>
                   {g.productoNombre}
                   <Typography sx={{ fontSize: 11, color: COLOR.muted }}>{g.cantidad} {String(g.unidadMedida).toLowerCase()}</Typography>
+                  {repetidos.porId.has(g._id) && (
+                    <Chip
+                      size="small"
+                      label={`Repetido ×${repetidos.porId.get(g._id).veces}`}
+                      sx={{ mt: 0.5, bgcolor: '#FCF1E8', color: '#7A4A22', fontWeight: 700, fontSize: 10, height: 20 }}
+                    />
+                  )}
                 </TableCell>
                 <TableCell>
                   <Chip size="small" label={humanizar(g.categoria)} sx={{ bgcolor: '#F1EDE5', color: '#4A4238', fontWeight: 700, fontSize: 11 }} />
@@ -205,12 +235,15 @@ export default function DetalleVista({ parametros, usuario, onVerBoleta, version
     }
   }
 
+  const repetidos = useMemo(() => (gastos ? detectarRepetidos(gastos) : SIN_REPETIDOS), [gastos]);
+
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!gastos) return <Cargando />;
   return (
     <>
       <DetalleTabla
         gastos={gastos}
+        repetidos={repetidos}
         puedeEliminar={(g) => puedeEliminarGasto(usuario, g)}
         onVerBoleta={onVerBoleta}
         onEliminar={abrirEliminar}
