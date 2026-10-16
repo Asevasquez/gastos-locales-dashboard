@@ -16,6 +16,7 @@ import ResumenVista from '../components/dashboard/ResumenVista';
 import LocalesVista from '../components/dashboard/LocalesVista';
 import ControlVista from '../components/dashboard/ControlVista';
 import DetalleVista from '../components/dashboard/DetalleVista';
+import HistorialVista from '../components/dashboard/HistorialVista';
 import { Cargando, ETIQUETA_MEDIO_PAGO } from '../components/dashboard/comunes';
 
 const SERVICIOS = { resumen: obtenerDashboardResumen, locales: obtenerDashboardLocales, control: obtenerDashboardControl };
@@ -58,7 +59,7 @@ export default function GastosPage() {
   }, [parametros, version]);
 
   useEffect(() => {
-    if (tab === 'detalle') return undefined;
+    if (tab === 'detalle' || tab === 'historial') return undefined;
     let cancelado = false;
     setCargando(true);
     setError('');
@@ -99,7 +100,8 @@ export default function GastosPage() {
     }
   }
 
-  const datosTab = tab === 'detalle' ? null : datos[tab];
+  const sinEstadisticas = tab === 'detalle' || tab === 'historial'; // estas pestañas cargan sus propios datos
+  const datosTab = sinEstadisticas ? null : datos[tab];
 
   return (
     <Box>
@@ -122,6 +124,7 @@ export default function GastosPage() {
         <Tab value="locales" label="Locales" />
         <Tab value="control" label="Control" />
         <Tab value="detalle" label="Detalle" />
+        <Tab value="historial" label="Historial" />
       </Tabs>
 
       <Box sx={{ mb: 2.5, display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -160,8 +163,8 @@ export default function GastosPage() {
         </Select>
       </Box>
 
-      {cargando && tab !== 'detalle' && <LinearProgress sx={{ mb: 2 }} />}
-      {error && tab !== 'detalle' && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {cargando && !sinEstadisticas && <LinearProgress sx={{ mb: 2 }} />}
+      {error && !sinEstadisticas && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       {tab === 'resumen' && (datosTab ? <ResumenVista datos={datosTab} onVerLocales={() => setTab('locales')} /> : !error && <Cargando />)}
       {tab === 'locales' && (datosTab ? <LocalesVista datos={datosTab} /> : !error && <Cargando />)}
@@ -169,11 +172,15 @@ export default function GastosPage() {
       {tab === 'detalle' && (
         <DetalleVista
           parametros={parametros}
-          esMaster={usuario?.rol === 'MASTER'}
+          usuario={usuario}
           onVerBoleta={setBoleta}
           version={version}
           onCambio={() => setVersion((v) => v + 1)}
         />
+      )}
+
+      {tab === 'historial' && (
+        <HistorialVista parametros={parametros} onVerBoleta={setBoleta} version={version} />
       )}
 
       <Dialog open={!!boleta} onClose={() => setBoleta(null)} maxWidth="sm" fullWidth>

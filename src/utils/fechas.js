@@ -72,3 +72,27 @@ export function textoUltimoRegistro(ultimoISO, hoyISO) {
   if (dias === 1) return 'ayer';
   return `hace ${dias} días`;
 }
+
+// Fecha y hora de un evento (se guarda como instante real, así que sí se muestra en hora local).
+export function formatearFechaHora(valor) {
+  const d = new Date(valor);
+  const fecha = d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const hora = d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${fecha} ${hora}`;
+}
+
+// Convierte los filtros de período del dashboard ({ mes } o { desde, hasta }, en días) al rango de
+// instantes [inicio del primer día, fin del último día] en hora local, que es lo que usa el historial.
+export function rangoInstantes({ mes, desde, hasta }) {
+  let d = desde;
+  let h = hasta;
+  if (mes) {
+    const [y, m] = mes.split('-').map(Number);
+    d = `${mes}-01`;
+    h = fechaLocalISO(new Date(y, m, 0)); // día 0 del mes siguiente = último día de este mes
+  }
+  return {
+    desde: new Date(`${d}T00:00:00`).toISOString(),
+    hasta: new Date(`${h}T23:59:59.999`).toISOString()
+  };
+}

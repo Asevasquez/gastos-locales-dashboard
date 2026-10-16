@@ -5,8 +5,9 @@ export async function listarGastos(params) {
   return data;
 }
 
-export async function eliminarGasto(id) {
-  const { data } = await api.delete(`/gastos/${id}`);
+// El motivo es obligatorio: queda guardado en el historial junto con quién eliminó el gasto.
+export async function eliminarGasto(id, motivo) {
+  const { data } = await api.delete(`/gastos/${id}`, { data: { motivo } });
   return data;
 }
 

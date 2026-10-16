@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Chip, IconButton, InputAdornment, Table, TableBody, TableCell, TableHead,
-  TablePagination, TableRow, TextField, Tooltip, Typography
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
+  Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -9,9 +9,53 @@ import SearchIcon from '@mui/icons-material/Search';
 import { listarGastos, eliminarGasto } from '../../services/gastos';
 import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Tarjeta, clp, humanizar } from './comunes';
 import { formatearFechaGasto } from '../../utils/fechas';
+import { puedeEliminarGasto } from '../../utils/permisos';
+
+const MOTIVO_MIN = 3;
+
+// Confirmación de eliminación: pide un motivo obligatorio, que queda en el historial.
+export function DialogEliminarGasto({ gasto, onCancelar, onConfirmar, enviando = false, error = '' }) {
+  const [motivo, setMotivo] = useState('');
+  const valido = motivo.trim().length >= MOTIVO_MIN;
+  return (
+    <Dialog open={!!gasto} onClose={enviando ? undefined : onCancelar} maxWidth="xs" fullWidth>
+      <DialogTitle>Eliminar gasto</DialogTitle>
+      <DialogContent>
+        {gasto && (
+          <>
+            <Box sx={{ bgcolor: 'background.default', borderRadius: 2, p: 1.5, mb: 2 }}>
+              <Typography fontWeight={700} fontSize={14}>{gasto.productoNombre} · {clp(gasto.monto)}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {gasto.local?.nombre} · {formatearFechaGasto(gasto.fecha)}
+              </Typography>
+            </Box>
+            <TextField
+              autoFocus
+              multiline
+              minRows={2}
+              fullWidth
+              label="Motivo de la eliminación"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              helperText="Obligatorio. Quedará registrado en el historial con tu nombre y la fecha."
+            />
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+          </>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onCancelar} disabled={enviando}>Cancelar</Button>
+        <Button color="error" variant="contained" disabled={!valido || enviando} onClick={() => onConfirmar(motivo.trim())}>
+          {enviando ? 'Eliminando…' : 'Eliminar'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
 
 // Tabla de gastos (pura: recibe los gastos ya cargados). Búsqueda y paginación en el navegador.
-export function DetalleTabla({ gastos, esMaster, onVerBoleta, onEliminar }) {
+// `puedeEliminar(gasto)` decide si se muestra el botón de eliminar, al lado de la boleta.
+export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar }) {
   const [busqueda, setBusqueda] = useState('');
   const [pagina, setPagina] = useState(0);
   const [porPagina, setPorPagina] = useState(25);
@@ -56,8 +100,7 @@ export function DetalleTabla({ gastos, esMaster, onVerBoleta, onEliminar }) {
               <TableCell>Medio de pago</TableCell>
               <TableCell>Motivo</TableCell>
               <TableCell>Registró</TableCell>
-              <TableCell align="center">Boleta</TableCell>
-              {esMaster && <TableCell align="center">Eliminar</TableCell>}
+              <TableCell align="center">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -87,23 +130,23 @@ export function DetalleTabla({ gastos, esMaster, onVerBoleta, onEliminar }) {
                   </Tooltip>
                 </TableCell>
                 <TableCell sx={{ color: COLOR.muted, whiteSpace: 'nowrap' }}>{g.usuario?.nombre}</TableCell>
-                <TableCell align="center">
+                <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                   <IconButton size="small" onClick={() => onVerBoleta(g.fotoBoletaUrl)} disabled={!g.fotoBoletaUrl} aria-label="Ver boleta">
                     <ReceiptIcon fontSize="small" />
                   </IconButton>
+                  {puedeEliminar(g) && (
+                    <Tooltip title="Eliminar gasto">
+                      <IconButton size="small" color="error" onClick={() => onEliminar(g)} aria-label="Eliminar gasto">
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </TableCell>
-                {esMaster && (
-                  <TableCell align="center">
-                    <IconButton size="small" color="error" onClick={() => onEliminar(g)} aria-label="Eliminar gasto">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                )}
               </TableRow>
             ))}
             {filtrados.length === 0 && (
               <TableRow>
-                <TableCell colSpan={esMaster ? 11 : 10} align="center" sx={{ color: COLOR.muted, py: 4 }}>
+                <TableCell colSpan={10} align="center" sx={{ color: COLOR.muted, py: 4 }}>
                   No hay gastos que coincidan en este período.
                 </TableCell>
               </TableRow>
@@ -126,10 +169,13 @@ export function DetalleTabla({ gastos, esMaster, onVerBoleta, onEliminar }) {
   );
 }
 
-// Carga los gastos del período y filtros activos y maneja el borrado (solo MASTER).
-export default function DetalleVista({ parametros, esMaster, onVerBoleta, version = 0, onCambio }) {
+// Carga los gastos del período y filtros activos y maneja la eliminación (con motivo obligatorio).
+export default function DetalleVista({ parametros, usuario, onVerBoleta, version = 0, onCambio }) {
   const [gastos, setGastos] = useState(null);
   const [error, setError] = useState('');
+  const [aEliminar, setAEliminar] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState('');
 
   useEffect(() => {
     let cancelado = false;
@@ -140,18 +186,43 @@ export default function DetalleVista({ parametros, esMaster, onVerBoleta, versio
     return () => { cancelado = true; };
   }, [parametros, version]);
 
-  async function eliminar(g) {
-    const ok = window.confirm(`¿Eliminar el gasto de "${g.productoNombre}" por ${clp(g.monto)}? Esta acción no se puede deshacer.`);
-    if (!ok) return;
+  function abrirEliminar(g) {
+    setErrorEliminar('');
+    setAEliminar(g);
+  }
+
+  async function confirmarEliminar(motivo) {
+    setEnviando(true);
+    setErrorEliminar('');
     try {
-      await eliminarGasto(g._id);
+      await eliminarGasto(aEliminar._id, motivo);
+      setAEliminar(null);
       if (onCambio) onCambio();
     } catch (e) {
-      window.alert(e.response?.data?.error || 'No se pudo eliminar el gasto');
+      setErrorEliminar(e.response?.data?.error || 'No se pudo eliminar el gasto');
+    } finally {
+      setEnviando(false);
     }
   }
 
   if (error) return <Alert severity="error">{error}</Alert>;
   if (!gastos) return <Cargando />;
-  return <DetalleTabla gastos={gastos} esMaster={esMaster} onVerBoleta={onVerBoleta} onEliminar={eliminar} />;
+  return (
+    <>
+      <DetalleTabla
+        gastos={gastos}
+        puedeEliminar={(g) => puedeEliminarGasto(usuario, g)}
+        onVerBoleta={onVerBoleta}
+        onEliminar={abrirEliminar}
+      />
+      <DialogEliminarGasto
+        key={aEliminar ? aEliminar._id : 'cerrado'}
+        gasto={aEliminar}
+        enviando={enviando}
+        error={errorEliminar}
+        onCancelar={() => setAEliminar(null)}
+        onConfirmar={confirmarEliminar}
+      />
+    </>
+  );
 }
