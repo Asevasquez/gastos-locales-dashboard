@@ -12,6 +12,8 @@ const ETIQUETA_MEDIO_PAGO = {
 // contable en mayúsculas), RATIO, CUENTA CONTABLE, MES, MEDIO DE PAGO. ESTATUS/ESTE MES quedan en blanco:
 // no hay con qué llenarlas de forma confiable desde el sistema. ID LOCAL es el "Código externo" del
 // local (se edita en la pantalla Locales); queda vacío para los locales que no tengan uno cargado.
+// FOLIO va al final, para no mover las columnas de la planilla: es el número de la boleta o factura (varios
+// productos de una misma boleta repiten el mismo folio); queda vacío en los gastos anteriores a los folios.
 export function exportarGastosExcel(gastos, nombreArchivo) {
   const filas = gastos.map((g) => {
     const fecha = new Date(g.fecha);
@@ -28,7 +30,9 @@ export function exportarGastosExcel(gastos, nombreArchivo) {
       RATIO: g.categoria,
       'CUENTA CONTABLE': g.cuentaContable,
       MES: MESES_ES[fecha.getUTCMonth()],
-      'MEDIO DE PAGO': ETIQUETA_MEDIO_PAGO[g.medioPago] || g.medioPago
+      'MEDIO DE PAGO': ETIQUETA_MEDIO_PAGO[g.medioPago] || g.medioPago,
+      // como texto: así Excel conserva los ceros a la izquierda ("001234")
+      FOLIO: g.folio ? String(g.folio) : ''
     };
   });
 
