@@ -1,11 +1,12 @@
 // Detecta gastos que parecen repetidos: misma persona, local, ítem, cantidad, unidad, monto, fecha,
-// medio de pago y motivo. No los elimina: solo ayuda a revisarlos (puede haber compras idénticas reales).
+// medio de pago, motivo y folio (dos compras idénticas con boletas distintas NO son repetidas). No los elimina: solo ayuda a revisarlos (puede haber compras idénticas reales).
 const idDe = (v) => String((v && v._id) || v || '');
 
 export function claveRepetido(g) {
   return [
     idDe(g.usuario), idDe(g.local), idDe(g.productoCatalogoId) || String(g.productoNombre || ''), g.cantidad, g.unidadMedida, g.monto,
-    String(g.fecha).slice(0, 10), g.medioPago, String(g.motivo || '').trim().toLowerCase()
+    String(g.fecha).slice(0, 10), g.medioPago, String(g.motivo || '').trim().toLowerCase(),
+    String(g.folioClave || g.folio || '').trim().toUpperCase()
   ].join('|');
 }
 

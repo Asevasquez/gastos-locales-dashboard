@@ -73,10 +73,17 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
     }
     if (!q) return lista;
     return lista.filter((g) =>
-      [g.local?.nombre, g.productoNombre, g.motivo, g.cuentaContable, g.categoria, g.usuario?.nombre]
+      [g.local?.nombre, g.productoNombre, g.motivo, g.cuentaContable, g.categoria, g.usuario?.nombre, g.folio]
         .some((v) => v && String(v).toLowerCase().includes(q))
     );
   }, [gastos, busqueda, soloRepetidos, repetidos]);
+
+  // Cuántos productos tiene cada documento (boleta o factura), según los gastos cargados.
+  const productosPorDocumento = useMemo(() => {
+    const m = new Map();
+    for (const g of gastos) if (g.documentoId) m.set(g.documentoId, (m.get(g.documentoId) || 0) + 1);
+    return m;
+  }, [gastos]);
 
   const visibles = filtrados.slice(pagina * porPagina, pagina * porPagina + porPagina);
   const total = filtrados.reduce((a, g) => a + g.monto, 0);
@@ -111,10 +118,11 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
         </Alert>
       )}
       <Box sx={{ overflowX: 'auto' }}>
-        <Table size="small" sx={{ minWidth: 1150 }}>
+        <Table size="small" sx={{ minWidth: 1250 }}>
           <TableHead>
             <TableRow>
               <TableCell>Fecha</TableCell>
+              <TableCell>Folio</TableCell>
               <TableCell>Local</TableCell>
               <TableCell>Producto</TableCell>
               <TableCell>Categoría</TableCell>
@@ -130,6 +138,14 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
             {visibles.map((g) => (
               <TableRow key={g._id} hover>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatearFechaGasto(g.fecha)}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                  {g.folio || <Box component="span" sx={{ color: COLOR.muted }}>—</Box>}
+                  {productosPorDocumento.get(g.documentoId) > 1 && (
+                    <Typography sx={{ fontSize: 11, color: COLOR.muted }}>
+                      Documento de {productosPorDocumento.get(g.documentoId)} productos
+                    </Typography>
+                  )}
+                </TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>{g.local?.nombre}</TableCell>
                 <TableCell>
                   {g.productoNombre}
@@ -176,7 +192,7 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
             ))}
             {filtrados.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ color: COLOR.muted, py: 4 }}>
+                <TableCell colSpan={11} align="center" sx={{ color: COLOR.muted, py: 4 }}>
                   No hay gastos que coincidan en este período.
                 </TableCell>
               </TableRow>
