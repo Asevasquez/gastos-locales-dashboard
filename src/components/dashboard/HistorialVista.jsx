@@ -27,7 +27,7 @@ export function HistorialTabla({ eventos, onVerBoleta }) {
     return eventos.filter((e) => {
       if (accion !== 'TODOS' && e.accion !== accion) return false;
       if (!q) return true;
-      return [e.localNombre, e.gasto?.productoNombre, e.gasto?.motivo, e.motivoEliminacion, e.realizadoPor?.nombre, e.gasto?.subidoPor?.nombre, e.gasto?.folio]
+      return [e.localNombre, e.gasto?.productoNombre, e.gasto?.motivo, e.motivoEliminacion, e.realizadoPor?.nombre, e.gasto?.subidoPor?.nombre, e.gasto?.folio, e.gasto?.numeroDocumento]
         .some((v) => v && String(v).toLowerCase().includes(q));
     });
   }, [eventos, accion, busqueda]);
@@ -101,7 +101,11 @@ export function HistorialTabla({ eventos, onVerBoleta }) {
                     <TableCell>
                       {g.productoNombre}
                       <Typography sx={{ fontSize: 11, color: COLOR.muted }}>{g.cantidad} {String(g.unidadMedida || '').toLowerCase()}</Typography>
-                      {g.folio && <Typography sx={{ fontSize: 11, color: COLOR.muted }}>Folio {g.folio}</Typography>}
+                      {(g.numeroDocumento != null || g.folio) && (
+                        <Typography sx={{ fontSize: 11, color: COLOR.muted }}>
+                          {[g.numeroDocumento != null ? `N° ${g.numeroDocumento}` : null, g.folio ? `Folio ${g.folio}` : null].filter(Boolean).join(' · ')}
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{clp(g.monto)}</TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>{g.fecha ? formatearFechaGasto(g.fecha) : ''}</TableCell>
