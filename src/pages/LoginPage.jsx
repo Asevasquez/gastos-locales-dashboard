@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Box, Paper, TextField, Button, Typography, Alert } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { leerMensajeSesion } from '../services/api';
+import { describirErrorLogin } from '../utils/errores';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -10,16 +12,22 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  // Si el usuario llegó acá porque su sesión venció, se le explica (se lee una sola vez).
+  const [aviso] = useState(() => leerMensajeSesion());
 
   async function manejarSubmit(e) {
     e.preventDefault();
     setError('');
+    if (!email.trim() || !password) {
+      setError('Ingresa tu email y tu contraseña.');
+      return;
+    }
     setCargando(true);
     try {
       await login(email.trim(), password);
       navegar('/gastos');
     } catch (err) {
-      setError(err.response?.data?.error || 'No se pudo iniciar sesión');
+      setError(describirErrorLogin(err));
     } finally {
       setCargando(false);
     }
@@ -56,7 +64,8 @@ export default function LoginPage() {
             fullWidth
             margin="normal"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => { setEmail(e.target.value); setError(''); }}
+            autoComplete="username"
           />
           <TextField
             label="Contraseña"
@@ -64,8 +73,15 @@ export default function LoginPage() {
             fullWidth
             margin="normal"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => { setPassword(e.target.value); setError(''); }}
+            autoComplete="current-password"
           />
+
+          {aviso && !error && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              {aviso}
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mt: 1 }}>
