@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Typography, Avatar, IconButton, Tooltip } from '@mui/material';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import StoreIcon from '@mui/icons-material/Store';
 import GroupIcon from '@mui/icons-material/Group';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
@@ -10,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 
 const itemsNav = [
   { to: '/gastos', label: 'Gastos', icono: ReceiptLongIcon, roles: null },
+  { to: '/gastos/nuevo', label: 'Nuevo gasto', icono: AddCircleOutlineIcon, roles: ['ADMINISTRADOR', 'MASTER'] },
   { to: '/catalogo', label: 'Catálogo', icono: UploadFileIcon, roles: ['MASTER'] },
   { to: '/locales', label: 'Locales', icono: StoreIcon, roles: ['MASTER'] },
   { to: '/usuarios', label: 'Usuarios', icono: GroupIcon, roles: ['MASTER'] }
@@ -55,6 +57,7 @@ export default function Layout() {
             <NavLink
               key={to}
               to={to}
+              end
               style={({ isActive }) => ({
                 display: 'flex',
                 alignItems: 'center',

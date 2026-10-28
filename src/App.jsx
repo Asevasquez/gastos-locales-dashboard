@@ -5,6 +5,7 @@ import RutaProtegida from './components/RutaProtegida';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import GastosPage from './pages/GastosPage';
+import NuevoGastoPage from './pages/NuevoGastoPage';
 import CatalogoPage from './pages/CatalogoPage';
 import LocalesPage from './pages/LocalesPage';
 import UsuariosPage from './pages/UsuariosPage';
@@ -24,6 +25,14 @@ export default function App() {
             }
           >
             <Route path="/gastos" element={<GastosPage />} />
+            <Route
+              path="/gastos/nuevo"
+              element={
+                <RutaProtegida rolesPermitidos={['ADMINISTRADOR', 'MASTER']}>
+                  <NuevoGastoPage />
+                </RutaProtegida>
+              }
+            />
             <Route
               path="/catalogo"
               element={

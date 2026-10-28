@@ -25,3 +25,9 @@ export async function importarCatalogoExcel(archivo) {
   });
   return data;
 }
+
+// Todos los ítems activos (item, detalle, ratio, cuentaContable): es una lista corta y sirve para buscar en pantalla.
+export async function obtenerCatalogoCompleto() {
+  const { data } = await api.get('/catalogo/completo');
+  return data;
+}
