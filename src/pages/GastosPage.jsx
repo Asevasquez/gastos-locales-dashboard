@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Select,
+  Alert, Box, Button, LinearProgress, MenuItem, Select,
   Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Typography
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
-import CloseIcon from '@mui/icons-material/Close';
 import { listarGastos } from '../services/gastos';
 import { listarLocales } from '../services/locales';
 import { obtenerDashboardResumen, obtenerDashboardLocales, obtenerDashboardControl } from '../services/dashboard';
@@ -16,6 +15,7 @@ import ResumenVista from '../components/dashboard/ResumenVista';
 import LocalesVista from '../components/dashboard/LocalesVista';
 import ControlVista from '../components/dashboard/ControlVista';
 import DetalleVista from '../components/dashboard/DetalleVista';
+import VisorBoleta from '../components/dashboard/VisorBoleta';
 import HistorialVista from '../components/dashboard/HistorialVista';
 import { Cargando, ETIQUETA_MEDIO_PAGO } from '../components/dashboard/comunes';
 
@@ -35,7 +35,12 @@ export default function GastosPage() {
   const [datos, setDatos] = useState(SIN_DATOS);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
-  const [boleta, setBoleta] = useState(null);
+  const [boleta, setBoleta] = useState(null); // fotos de la boleta que se está viendo (lista de direcciones)
+  // las vistas entregan la lista de fotos (de 1 a 3); también se acepta una dirección suelta
+  const abrirBoleta = (fotos) => {
+    const lista = Array.isArray(fotos) ? fotos : fotos ? [fotos] : [];
+    setBoleta(lista.length > 0 ? lista : null);
+  };
   const [exportando, setExportando] = useState(false);
   const [version, setVersion] = useState(0); // sube al borrar un gasto, para recalcular todo
 
@@ -168,30 +173,22 @@ export default function GastosPage() {
 
       {tab === 'resumen' && (datosTab ? <ResumenVista datos={datosTab} onVerLocales={() => setTab('locales')} /> : !error && <Cargando />)}
       {tab === 'locales' && (datosTab ? <LocalesVista datos={datosTab} /> : !error && <Cargando />)}
-      {tab === 'control' && (datosTab ? <ControlVista datos={datosTab} onVerBoleta={setBoleta} /> : !error && <Cargando />)}
+      {tab === 'control' && (datosTab ? <ControlVista datos={datosTab} onVerBoleta={abrirBoleta} /> : !error && <Cargando />)}
       {tab === 'detalle' && (
         <DetalleVista
           parametros={parametros}
           usuario={usuario}
-          onVerBoleta={setBoleta}
+          onVerBoleta={abrirBoleta}
           version={version}
           onCambio={() => setVersion((v) => v + 1)}
         />
       )}
 
       {tab === 'historial' && (
-        <HistorialVista parametros={parametros} onVerBoleta={setBoleta} version={version} />
+        <HistorialVista parametros={parametros} onVerBoleta={abrirBoleta} version={version} />
       )}
 
-      <Dialog open={!!boleta} onClose={() => setBoleta(null)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          Boleta / factura
-          <IconButton size="small" onClick={() => setBoleta(null)}><CloseIcon fontSize="small" /></IconButton>
-        </DialogTitle>
-        <DialogContent>
-          {boleta && <Box component="img" src={boleta} alt="Boleta o factura del gasto" sx={{ width: '100%', borderRadius: 2, display: 'block' }} />}
-        </DialogContent>
-      </Dialog>
+      <VisorBoleta fotos={boleta} onCerrar={() => setBoleta(null)} />
     </Box>
   );
 }

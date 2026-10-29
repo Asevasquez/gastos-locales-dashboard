@@ -1,8 +1,9 @@
 import React from 'react';
-import { Box, IconButton, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Badge, Box, IconButton, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import { COLOR, Pildora, Tarjeta, clp, pct } from './comunes';
 import { diaMesCorto, formatearFechaGasto } from '../../utils/fechas';
+import { fotosDe } from '../../utils/fotos';
 
 function KpiAlerta({ etiqueta, valor, sub, color }) {
   return (
@@ -54,8 +55,10 @@ function Atipicos({ d, onVerBoleta }) {
                   <Box component="span" sx={{ fontSize: 11, color: COLOR.muted }}>prom. {clp(a.promedio)}</Box>
                 </TableCell>
                 <TableCell align="center">
-                  <IconButton size="small" onClick={() => onVerBoleta && onVerBoleta(a.fotoBoletaUrl)} disabled={!a.fotoBoletaUrl} aria-label="Ver boleta">
-                    <ReceiptIcon fontSize="small" />
+                  <IconButton size="small" onClick={() => onVerBoleta && onVerBoleta(fotosDe(a))} disabled={fotosDe(a).length === 0} aria-label="Ver boleta">
+                    <Badge badgeContent={fotosDe(a).length} invisible={fotosDe(a).length < 2} color="primary" title={`${fotosDe(a).length} fotos`}>
+                      <ReceiptIcon fontSize="small" />
+                    </Badge>
                   </IconButton>
                 </TableCell>
               </TableRow>

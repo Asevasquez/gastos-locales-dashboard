@@ -8,12 +8,13 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import CloseIcon from '@mui/icons-material/Close';
 import { listarLocales } from '../services/locales';
 import { obtenerCatalogoCompleto } from '../services/catalogo';
-import { crearDocumentoConFoto } from '../services/gastos';
+import { crearDocumentoConFotos } from '../services/gastos';
 import { fechaLocalISO } from '../utils/fechas';
 import { describirError } from '../utils/errores';
-import { MAX_FOTO_ENVIO_MB, prepararFoto, validarFoto } from '../utils/fotos';
+import { MAX_FOTO_ENVIO_MB, MAX_FOTOS, claveFoto, prepararFoto, validarFoto } from '../utils/fotos';
 import {
   FOLIO_MAX, UNIDADES, armarPayloadDocumento, claveNueva, crearLinea, editorVacio, textoProductos, totalDocumento,
   validarDocumento, validarLinea
@@ -32,8 +33,7 @@ export default function NuevoGastoPage() {
   const [fecha, setFecha] = useState(hoy);
   const [medioPago, setMedioPago] = useState(null);
   const [folio, setFolio] = useState('');
-  const [foto, setFoto] = useState(null);
-  const [fotoPrevia, setFotoPrevia] = useState(null);
+  const [fotos, setFotos] = useState([]); // hasta 3: [{ id, clave, archivo, previa }]
   const [errorFoto, setErrorFoto] = useState('');
   const [preparandoFoto, setPreparandoFoto] = useState(false);
 
@@ -56,11 +56,12 @@ export default function NuevoGastoPage() {
   const [folioRepetido, setFolioRepetido] = useState(null); // mensaje del servidor cuando el folio ya existe
 
   // Anti-duplicados: la clave identifica a ESTA boleta mientras se llena el formulario (se renueva solo cuando se
-  // guardó); `enCurso` ignora un segundo clic mientras el primero sigue en marcha; y si la foto ya se subió en un
-  // intento que no terminó, se reutiliza en vez de subirla otra vez.
+  // guardó); `enCurso` ignora un segundo clic mientras el primero sigue en marcha; y las fotos que ya se subieron en
+  // un intento que no terminó se reutilizan (por foto) en vez de subirlas otra vez.
   const claveRef = useRef(claveNueva());
   const enCursoRef = useRef(false);
-  const fotoSubidaRef = useRef(null);
+  const urlsFotosRef = useRef({}); // { [id de la foto]: dirección ya subida }
+  const fotosRef = useRef([]);
   const inicioRef = useRef(null);
 
   useEffect(() => {
@@ -90,16 +91,12 @@ export default function NuevoGastoPage() {
 
   useEffect(() => { cargarCatalogo(); }, [cargarCatalogo]);
 
-  // vista previa de la foto
-  useEffect(() => {
-    if (!foto) { setFotoPrevia(null); return undefined; }
-    const url = URL.createObjectURL(foto);
-    setFotoPrevia(url);
-    return () => URL.revokeObjectURL(url);
-  }, [foto]);
+  // Las vistas previas ocupan memoria del navegador: se liberan al salir de la pantalla.
+  useEffect(() => { fotosRef.current = fotos; }, [fotos]);
+  useEffect(() => () => fotosRef.current.forEach((f) => URL.revokeObjectURL(f.previa)), []);
 
   // Si hay algo escrito, el navegador pregunta antes de cerrar o recargar la pestaña (para no perder una boleta a medias).
-  const hayCambios = lineas.length > 0 || !!folio || !!foto || !!producto || !!cantidad || !!monto;
+  const hayCambios = lineas.length > 0 || !!folio || fotos.length > 0 || !!producto || !!cantidad || !!monto;
   useEffect(() => {
     if (!hayCambios) return undefined;
     const avisar = (e) => { e.preventDefault(); e.returnValue = ''; };
@@ -107,26 +104,44 @@ export default function NuevoGastoPage() {
     return () => window.removeEventListener('beforeunload', avisar);
   }, [hayCambios]);
 
-  function cambiarFoto(archivo) {
-    fotoSubidaRef.current = null; // otra foto: la que ya se había subido no sirve
-    setFoto(archivo);
+  function quitarFoto(id) {
+    setFotos((previas) => {
+      const foto = previas.find((f) => f.id === id);
+      if (foto) URL.revokeObjectURL(foto.previa);
+      return previas.filter((f) => f.id !== id);
+    });
+    setErrorFoto('');
   }
 
-  async function elegirFoto(e) {
-    const archivo = e.target.files && e.target.files[0];
+  // Se pueden elegir varias fotos a la vez; entran hasta completar 3. Las que no sirven (formato, peso, repetidas o
+  // sobre el límite) se omiten y se explica por qué.
+  async function elegirFotos(e) {
+    const archivos = Array.from(e.target.files || []);
     e.target.value = ''; // permite volver a elegir el mismo archivo
-    if (!archivo) return;
+    if (archivos.length === 0) return;
     setErrorFoto('');
-    const errorArchivo = validarFoto(archivo);
-    if (errorArchivo) { setErrorFoto(errorArchivo); return; }
     setPreparandoFoto(true);
+    const avisos = [];
     try {
-      const preparada = await prepararFoto(archivo);
-      if (preparada.size > MAX_FOTO_ENVIO_MB * 1024 * 1024) {
-        setErrorFoto(`La foto pesa más de ${MAX_FOTO_ENVIO_MB} MB y no se pudo reducir. Usa una imagen más liviana.`);
-        return;
+      let cupo = MAX_FOTOS - fotosRef.current.length;
+      const nuevas = [];
+      for (const archivo of archivos) {
+        const prefijo = archivos.length > 1 ? `${archivo.name}: ` : '';
+        if (cupo <= 0) { avisos.push(`Solo se pueden adjuntar ${MAX_FOTOS} fotos por boleta.`); break; }
+        const errorArchivo = validarFoto(archivo);
+        if (errorArchivo) { avisos.push(`${prefijo}${errorArchivo}`); continue; }
+        const clave = claveFoto(archivo);
+        if ([...fotosRef.current, ...nuevas].some((f) => f.clave === clave)) { avisos.push(`${prefijo}Esa foto ya está agregada.`); continue; }
+        const preparada = await prepararFoto(archivo);
+        if (preparada.size > MAX_FOTO_ENVIO_MB * 1024 * 1024) {
+          avisos.push(`${prefijo}La foto pesa más de ${MAX_FOTO_ENVIO_MB} MB y no se pudo reducir. Usa una imagen más liviana.`);
+          continue;
+        }
+        nuevas.push({ id: claveNueva(), clave, archivo: preparada, previa: URL.createObjectURL(preparada) });
+        cupo -= 1;
       }
-      cambiarFoto(preparada);
+      if (nuevas.length > 0) setFotos((previas) => [...previas, ...nuevas].slice(0, MAX_FOTOS));
+      if (avisos.length > 0) setErrorFoto(avisos.join(' '));
     } finally {
       setPreparandoFoto(false);
     }
@@ -158,12 +173,13 @@ export default function NuevoGastoPage() {
 
   function limpiarFormulario() {
     claveRef.current = claveNueva(); // la próxima boleta es otra: clave nueva
-    fotoSubidaRef.current = null;
+    urlsFotosRef.current = {};
     limpiarEditor('');
     setLineas([]);
     setFolio('');
     setMedioPago(null);
-    setFoto(null);
+    fotosRef.current.forEach((f) => URL.revokeObjectURL(f.previa));
+    setFotos([]);
     setErrorFoto('');
     // el local y la fecha se dejan: suelen ser los mismos de la boleta siguiente
   }
@@ -183,7 +199,7 @@ export default function NuevoGastoPage() {
       todas = [...lineas, crearLinea({ productoSeleccionado: producto, cantidad, unidad, monto, motivo })];
     }
 
-    const errorValidacion = validarDocumento({ local, fecha, folio, medioPago, foto, lineas: todas, hoy: fechaLocalISO(new Date()) });
+    const errorValidacion = validarDocumento({ local, fecha, folio, medioPago, fotos, lineas: todas, hoy: fechaLocalISO(new Date()) });
     if (errorValidacion) { setErrorGuardar(errorValidacion); return; }
 
     enCursoRef.current = true;
@@ -191,12 +207,16 @@ export default function NuevoGastoPage() {
     setExito(null);
     try {
       const payload = armarPayloadDocumento({ claveDocumento: claveRef.current, local, folio, fecha, medioPago, lineas: todas, confirmarFolioRepetido });
-      const documento = await crearDocumentoConFoto(payload, foto, { fotoBoletaUrl: fotoSubidaRef.current });
+      const documento = await crearDocumentoConFotos(
+        payload,
+        fotos.map(({ id, archivo }) => ({ id, archivo })),
+        { urlsPrevias: urlsFotosRef.current }
+      );
       setExito({ numero: documento.numeroDocumento, productos: todas.length, total: totalDocumento(todas), folio: documento.folio });
       limpiarFormulario();
       if (inicioRef.current && inicioRef.current.scrollIntoView) inicioRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
-      if (err.fotoBoletaUrl) fotoSubidaRef.current = err.fotoBoletaUrl;
+      if (err.urlsFotos) urlsFotosRef.current = { ...urlsFotosRef.current, ...err.urlsFotos };
       if (err.response?.status === 409 && err.response?.data?.codigo === 'FOLIO_REPETIDO') {
         setFolioRepetido(err.response.data.error);
       } else {
@@ -276,26 +296,42 @@ export default function NuevoGastoPage() {
         </Box>
 
         <Box sx={{ mt: 2.5 }}>
-          <Typography variant="body2" fontWeight={600} mb={1}>Foto de la boleta o factura</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} disabled={preparandoFoto}>
-              {foto ? 'Cambiar foto' : 'Subir foto'}
-              <input
-                hidden
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                aria-label="Foto de la boleta"
-                onChange={elegirFoto}
-              />
-            </Button>
-            {preparandoFoto && <CircularProgress size={20} />}
-            {foto && fotoPrevia && (
-              <>
-                <Box component="img" src={fotoPrevia} alt="Vista previa de la boleta" sx={{ height: 64, borderRadius: 1.5, border: `1px solid ${COLOR.linea}` }} />
-                <Typography variant="caption" color="text.secondary">{foto.name} · {(foto.size / 1024).toFixed(0)} KB</Typography>
-                <Button size="small" color="inherit" onClick={() => cambiarFoto(null)}>Quitar foto</Button>
-              </>
-            )}
+          <Typography variant="body2" fontWeight={600} mb={0.5}>Fotos de la boleta o factura</Typography>
+          <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+            Hasta {MAX_FOTOS} fotos (por ejemplo, el frente y el reverso, o una boleta de varias hojas). Se necesita al menos una.
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+            {fotos.map((f, i) => (
+              <Box key={f.id} sx={{ position: 'relative', width: 120 }}>
+                <Box component="img" src={f.previa} alt={`Vista previa de la foto ${i + 1}`} sx={{ height: 80, width: '100%', objectFit: 'cover', borderRadius: 1.5, border: `1px solid ${COLOR.linea}`, display: 'block' }} />
+                <IconButton
+                  size="small"
+                  onClick={() => quitarFoto(f.id)}
+                  aria-label={`Quitar foto ${i + 1}`}
+                  sx={{ position: 'absolute', top: -10, right: -10, bgcolor: 'background.paper', border: `1px solid ${COLOR.linea}`, '&:hover': { bgcolor: 'background.paper' } }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="caption" color="text.secondary" noWrap display="block">
+                  {f.archivo.name} · {(f.archivo.size / 1024).toFixed(0)} KB
+                </Typography>
+              </Box>
+            ))}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 80 }}>
+              <Button component="label" variant="outlined" startIcon={<UploadFileIcon />} disabled={preparandoFoto || fotos.length >= MAX_FOTOS}>
+                {fotos.length === 0 ? 'Subir foto' : 'Agregar otra foto'}
+                <input
+                  hidden
+                  multiple
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  aria-label="Foto de la boleta"
+                  onChange={elegirFotos}
+                />
+              </Button>
+              {preparandoFoto && <CircularProgress size={20} />}
+              <Typography variant="caption" color="text.secondary">{fotos.length} de {MAX_FOTOS}</Typography>
+            </Box>
           </Box>
           {errorFoto && <Alert severity="error" sx={{ mt: 1.5 }}>{errorFoto}</Alert>}
         </Box>

@@ -1,5 +1,7 @@
 // Reglas (puras) del ingreso de una boleta o factura con uno o más productos desde la web. Son las mismas que usa
 // la app del teléfono; el servidor vuelve a validar todo.
+import { MAX_FOTOS } from './fotos';
+
 export const MAX_PRODUCTOS = 30;
 export const FOLIO_MAX = 30;
 
@@ -67,14 +69,15 @@ export function textoProductos(n) {
 }
 
 // Validación de todo el documento (con las líneas ya reunidas). Devuelve el mensaje de error, o null.
-export function validarDocumento({ local, fecha, folio, medioPago, foto, lineas, hoy }) {
+export function validarDocumento({ local, fecha, folio, medioPago, fotos, lineas, hoy }) {
   if (!local) return 'Selecciona el local';
   if (!fecha) return 'Ingresa la fecha del gasto';
   if (hoy && fecha > hoy) return 'La fecha del gasto no puede ser futura';
   const errorFolio = validarFolio(folio);
   if (errorFolio) return errorFolio;
   if (!medioPago) return 'Selecciona el medio de pago';
-  if (!foto) return 'Adjunta la foto de la boleta o factura';
+  if (!fotos || fotos.length === 0) return 'Adjunta al menos una foto de la boleta o factura';
+  if (fotos.length > MAX_FOTOS) return `Una boleta puede tener hasta ${MAX_FOTOS} fotos`;
   if (lineas.length === 0) return 'Agrega al menos un producto';
   if (lineas.length > MAX_PRODUCTOS) return `Una boleta puede tener hasta ${MAX_PRODUCTOS} productos`;
   return null;

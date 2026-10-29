@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
+  Alert, Badge, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
   Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
@@ -9,6 +9,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import { listarGastos, eliminarGasto } from '../../services/gastos';
 import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Tarjeta, clp, humanizar } from './comunes';
 import { formatearFechaGasto } from '../../utils/fechas';
+import { fotosDe } from '../../utils/fotos';
 import { puedeEliminarGasto } from '../../utils/permisos';
 import { SIN_REPETIDOS, claveRepetido, detectarRepetidos } from '../../utils/duplicados';
 
@@ -179,8 +180,10 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
                 </TableCell>
                 <TableCell sx={{ color: COLOR.muted, whiteSpace: 'nowrap' }}>{g.usuario?.nombre}</TableCell>
                 <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
-                  <IconButton size="small" onClick={() => onVerBoleta(g.fotoBoletaUrl)} disabled={!g.fotoBoletaUrl} aria-label="Ver boleta">
-                    <ReceiptIcon fontSize="small" />
+                  <IconButton size="small" onClick={() => onVerBoleta(fotosDe(g))} disabled={fotosDe(g).length === 0} aria-label="Ver boleta">
+                    <Badge badgeContent={fotosDe(g).length} invisible={fotosDe(g).length < 2} color="primary" title={`${fotosDe(g).length} fotos`}>
+                      <ReceiptIcon fontSize="small" />
+                    </Badge>
                   </IconButton>
                   {puedeEliminar(g) && (
                     <Tooltip title="Eliminar gasto">

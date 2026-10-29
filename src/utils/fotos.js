@@ -3,6 +3,7 @@
 export const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'];
 export const MAX_FOTO_ORIGINAL_MB = 25; // máximo que se acepta elegir (después se reduce)
 export const MAX_FOTO_ENVIO_MB = 8; // máximo que acepta el servidor
+export const MAX_FOTOS = 3; // fotos por boleta o factura
 
 const MB = 1024 * 1024;
 
@@ -44,4 +45,16 @@ export async function prepararFoto(archivo, { maxLado = 1600, calidad = 0.8, dep
   } catch (err) {
     return archivo;
   }
+}
+
+// Todas las fotos de un gasto (o de un registro del historial): la lista nueva o, en los gastos de antes, la foto única.
+export function fotosDe(gasto) {
+  if (!gasto) return [];
+  if (Array.isArray(gasto.fotosBoletaUrls) && gasto.fotosBoletaUrls.length > 0) return gasto.fotosBoletaUrls;
+  return gasto.fotoBoletaUrl ? [gasto.fotoBoletaUrl] : [];
+}
+
+// Identifica un archivo para no agregar dos veces la misma foto.
+export function claveFoto(archivo) {
+  return `${archivo.name}|${archivo.size}|${archivo.lastModified || 0}`;
 }

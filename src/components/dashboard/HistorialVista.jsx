@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Chip, IconButton, InputAdornment, Table, TableBody, TableCell, TableHead, TablePagination,
+  Alert, Badge, Box, Chip, IconButton, InputAdornment, Table, TableBody, TableCell, TableHead, TablePagination,
   TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
@@ -8,6 +8,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import { obtenerHistorialGastos } from '../../services/historial';
 import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Kpi, Tarjeta, clp } from './comunes';
 import { formatearFechaGasto, formatearFechaHora, rangoInstantes } from '../../utils/fechas';
+import { fotosDe } from '../../utils/fotos';
 
 const ETIQUETA_ROL = { MASTER: 'Master', ADMINISTRADOR: 'Administrador', ANALISTA: 'Analista' };
 
@@ -134,8 +135,10 @@ export function HistorialTabla({ eventos, onVerBoleta }) {
                       </Tooltip>
                     </TableCell>
                     <TableCell align="center">
-                      <IconButton size="small" onClick={() => onVerBoleta(g.fotoBoletaUrl)} disabled={!g.fotoBoletaUrl} aria-label="Ver boleta">
-                        <ReceiptIcon fontSize="small" />
+                      <IconButton size="small" onClick={() => onVerBoleta(fotosDe(g))} disabled={fotosDe(g).length === 0} aria-label="Ver boleta">
+                        <Badge badgeContent={fotosDe(g).length} invisible={fotosDe(g).length < 2} color="primary" title={`${fotosDe(g).length} fotos`}>
+                          <ReceiptIcon fontSize="small" />
+                        </Badge>
                       </IconButton>
                     </TableCell>
                   </TableRow>

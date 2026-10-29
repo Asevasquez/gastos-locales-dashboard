@@ -38,15 +38,19 @@ export async function crearDocumento(payload) {
   return data;
 }
 
-// Sube la foto UNA vez y registra el documento. Si el envío falla, el error trae `fotoBoletaUrl` con la foto ya
-// subida, para reintentar (por ejemplo, tras preguntar por un folio repetido) sin subirla de nuevo.
-export async function crearDocumentoConFoto(payloadSinFoto, archivo, { fotoBoletaUrl } = {}) {
-  let url = fotoBoletaUrl || null;
+// Sube las fotos de la boleta (de 1 a 3, una por una y en orden) y registra el documento. Cada foto se sube UNA
+// sola vez: si el envío falla, el error trae `urlsFotos` ({ [id de la foto]: dirección }) con las que ya se
+// subieron, para reintentar (por ejemplo, tras preguntar por un folio repetido) subiendo solo las que faltan.
+//   fotos: [{ id, archivo }]      urlsPrevias: { [id]: dirección } de intentos anteriores
+export async function crearDocumentoConFotos(payloadSinFotos, fotos, { urlsPrevias = {} } = {}) {
+  const urls = { ...urlsPrevias };
   try {
-    if (!url) url = await subirFoto(archivo);
-    return await crearDocumento({ ...payloadSinFoto, fotoBoletaUrl: url });
+    for (const foto of fotos) {
+      if (!urls[foto.id]) urls[foto.id] = await subirFoto(foto.archivo);
+    }
+    return await crearDocumento({ ...payloadSinFotos, fotosBoletaUrls: fotos.map((foto) => urls[foto.id]) });
   } catch (err) {
-    if (url && err && typeof err === 'object') err.fotoBoletaUrl = url;
+    if (err && typeof err === 'object') err.urlsFotos = urls;
     throw err;
   }
 }
