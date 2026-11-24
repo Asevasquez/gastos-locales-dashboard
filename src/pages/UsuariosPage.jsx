@@ -32,7 +32,8 @@ import {
 import { listarLocales } from '../services/locales';
 import SelectorLocales from '../components/SelectorLocales';
 
-const ROLES = ['MASTER', 'ADMINISTRADOR', 'ANALISTA'];
+// ANALISTA y GERENCIA ven y revisan (aprueban o rechazan) los gastos de los locales que tengan asignados.
+const ROLES = ['MASTER', 'ADMINISTRADOR', 'ANALISTA', 'GERENCIA'];
 // localesAsignados es siempre un array de ids (strings), no de objetos.
 const FORM_VACIO = { nombre: '', email: '', password: '', rol: 'ADMINISTRADOR', localesAsignados: [] };
 

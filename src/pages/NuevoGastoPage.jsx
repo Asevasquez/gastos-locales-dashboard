@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
   Alert, Autocomplete, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText,
   DialogTitle, IconButton, InputAdornment, Link, MenuItem, Paper, Table, TableBody, TableCell, TableHead, TableRow,
@@ -9,20 +9,35 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
 import { listarLocales } from '../services/locales';
 import { obtenerCatalogoCompleto } from '../services/catalogo';
 import { crearDocumentoConFotos } from '../services/gastos';
+import { corregirBoleta, obtenerBoleta } from '../services/revision';
+import { useAuth } from '../context/AuthContext';
 import { fechaLocalISO } from '../utils/fechas';
 import { describirError } from '../utils/errores';
 import { MAX_FOTO_ENVIO_MB, MAX_FOTOS, claveFoto, prepararFoto, validarFoto } from '../utils/fotos';
 import {
-  FOLIO_MAX, UNIDADES, armarPayloadDocumento, claveNueva, crearLinea, editorVacio, textoProductos, totalDocumento,
-  validarDocumento, validarLinea
+  FOLIO_MAX, UNIDADES, armarPayloadCorreccion, armarPayloadDocumento, claveNueva, crearLinea, editorVacio, textoProductos,
+  totalDocumento, validarDocumento, validarLinea
 } from '../utils/documento';
 import { COLOR, ETIQUETA_MEDIO_PAGO, clp, humanizar } from '../components/dashboard/comunes';
 
+// Resumen del contenido del formulario: sirve para saber si algo cambió respecto de la boleta que se está corrigiendo.
+const firmaDe = (folio, fecha, medioPago, fotos, lineas) =>
+  JSON.stringify([
+    String(folio).trim(), fecha, medioPago, fotos.map((f) => f.clave),
+    lineas.map((l) => [l.gastoId || l.id, l.productoCatalogoId, l.cantidad, l.unidad, l.monto, l.motivo])
+  ]);
+
 // Ingreso de gastos desde la web (administradores): una boleta o factura con uno o más productos, igual que en la app.
+// Con una dirección /gastos/:id/corregir, la misma pantalla sirve para CORREGIR una boleta rechazada: se carga con sus
+// datos, se arregla lo que se pidió y al enviarla vuelve a revisión.
 export default function NuevoGastoPage() {
+  const { id: idCorregir } = useParams();
+  const editando = !!idCorregir;
+  const { usuario } = useAuth();
   const [hoy] = useState(() => fechaLocalISO(new Date()));
 
   // documento
@@ -55,6 +70,14 @@ export default function NuevoGastoPage() {
   const [exito, setExito] = useState(null);
   const [folioRepetido, setFolioRepetido] = useState(null); // mensaje del servidor cuando el folio ya existe
 
+  // corrección de una boleta rechazada
+  const [cargandoBoleta, setCargandoBoleta] = useState(editando);
+  const [boletaOriginal, setBoletaOriginal] = useState(null);
+  const [errorBoleta, setErrorBoleta] = useState('');
+  const [corregida, setCorregida] = useState(null); // { numero, productos, total } cuando ya se envió
+  const [editandoId, setEditandoId] = useState(null); // línea de la lista que se está editando
+  const firmaInicialRef = useRef(null);
+
   // Anti-duplicados: la clave identifica a ESTA boleta mientras se llena el formulario (se renueva solo cuando se
   // guardó); `enCurso` ignora un segundo clic mientras el primero sigue en marcha; y las fotos que ya se subieron en
   // un intento que no terminó se reutilizan (por foto) en vez de subirlas otra vez.
@@ -65,6 +88,7 @@ export default function NuevoGastoPage() {
   const inicioRef = useRef(null);
 
   useEffect(() => {
+    if (editando) { setCargandoLocales(false); return undefined; }
     let cancelado = false;
     listarLocales()
       .then((ls) => {
@@ -75,7 +99,36 @@ export default function NuevoGastoPage() {
       .catch((err) => { if (!cancelado) setErrorLocales(describirError(err)); })
       .finally(() => { if (!cancelado) setCargandoLocales(false); });
     return () => { cancelado = true; };
-  }, []);
+  }, [editando]);
+
+  // Al corregir: se carga la boleta con sus productos y fotos. Las fotos que ya estaban se reutilizan (no se vuelven a subir).
+  useEffect(() => {
+    if (!editando) return undefined;
+    let cancelado = false;
+    setCargandoBoleta(true);
+    setErrorBoleta('');
+    obtenerBoleta(idCorregir)
+      .then((b) => {
+        if (cancelado) return;
+        const existentes = (b.fotosBoletaUrls || []).map((url) => ({ id: claveNueva(), clave: url, archivo: null, url, previa: url }));
+        const lineasCargadas = b.lineas.map((l) => ({
+          id: `g-${l._id}`, gastoId: String(l._id), productoCatalogoId: l.productoCatalogoId, productoNombre: l.productoNombre,
+          categoria: l.categoria, cuentaContable: l.cuentaContable, cantidad: l.cantidad, unidad: l.unidadMedida, monto: l.monto, motivo: l.motivo
+        }));
+        urlsFotosRef.current = Object.fromEntries(existentes.map((f) => [f.id, f.url]));
+        firmaInicialRef.current = firmaDe(b.folio || '', String(b.fecha).slice(0, 10), b.medioPago, existentes, lineasCargadas);
+        setBoletaOriginal(b);
+        setLocal({ _id: (b.local && b.local._id) || b.local, nombre: (b.local && b.local.nombre) || '' });
+        setFecha(String(b.fecha).slice(0, 10));
+        setMedioPago(b.medioPago);
+        setFolio(b.folio || '');
+        setFotos(existentes);
+        setLineas(lineasCargadas);
+      })
+      .catch((err) => { if (!cancelado) setErrorBoleta(describirError(err)); })
+      .finally(() => { if (!cancelado) setCargandoBoleta(false); });
+    return () => { cancelado = true; };
+  }, [editando, idCorregir]);
 
   const cargarCatalogo = useCallback(async () => {
     setEstadoCatalogo('cargando');
@@ -96,7 +149,11 @@ export default function NuevoGastoPage() {
   useEffect(() => () => fotosRef.current.forEach((f) => URL.revokeObjectURL(f.previa)), []);
 
   // Si hay algo escrito, el navegador pregunta antes de cerrar o recargar la pestaña (para no perder una boleta a medias).
-  const hayCambios = lineas.length > 0 || !!folio || fotos.length > 0 || !!producto || !!cantidad || !!monto;
+  // Al corregir, solo cuenta lo que se cambió respecto de la boleta original.
+  const firmaActual = firmaDe(folio, fecha, medioPago, fotos, lineas);
+  const hayCambios = editando
+    ? !corregida && ((firmaInicialRef.current !== null && firmaActual !== firmaInicialRef.current) || !!producto || !!cantidad || !!monto)
+    : lineas.length > 0 || !!folio || fotos.length > 0 || !!producto || !!cantidad || !!monto;
   useEffect(() => {
     if (!hayCambios) return undefined;
     const avisar = (e) => { e.preventDefault(); e.returnValue = ''; };
@@ -148,6 +205,7 @@ export default function NuevoGastoPage() {
   }
 
   function limpiarEditor(motivoSiguiente = '') {
+    setEditandoId(null);
     setProducto(null);
     setInputProducto('');
     setCantidad('');
@@ -158,16 +216,48 @@ export default function NuevoGastoPage() {
 
   // Suma el producto que se está escribiendo a la lista de la boleta. El motivo queda precargado con el del
   // producto anterior (suele ser el mismo) y se puede cambiar.
+  // Si se está editando una línea de la lista, el producto del editor la reemplaza en su mismo lugar (conserva su identidad:
+  // al corregir una boleta, el servidor la reconoce como el mismo producto y no como uno quitado y otro nuevo).
+  function lineaDelEditor(lista) {
+    const nueva = crearLinea({ productoSeleccionado: producto, cantidad, unidad, monto, motivo });
+    const original = editandoId ? lista.find((l) => l.id === editandoId) : null;
+    return original ? { ...nueva, id: original.id, ...(original.gastoId ? { gastoId: original.gastoId } : {}) } : nueva;
+  }
+
+  function incorporar(lista) {
+    const linea = lineaDelEditor(lista);
+    return editandoId && lista.some((l) => l.id === editandoId) ? lista.map((l) => (l.id === editandoId ? linea : l)) : [...lista, linea];
+  }
+
   function agregarLinea() {
     const error = validarLinea({ productoSeleccionado: producto, cantidad, monto, motivo });
     if (error) { setErrorGuardar(error); return; }
     setErrorGuardar('');
-    const linea = crearLinea({ productoSeleccionado: producto, cantidad, unidad, monto, motivo });
-    setLineas((previas) => [...previas, linea]);
-    limpiarEditor(linea.motivo);
+    const motivoSiguiente = motivo.trim();
+    setLineas((previas) => incorporar(previas));
+    limpiarEditor(motivoSiguiente);
+  }
+
+  // Carga una línea ya agregada en el editor para cambiarla. Sigue en la lista hasta que se actualiza.
+  function editarLinea(l) {
+    if (!editorVacio({ productoTexto: inputProducto, productoSeleccionado: producto, cantidad, monto }) && !editandoId) {
+      setErrorGuardar('Termina de agregar (o borra) el producto que estás escribiendo antes de editar otro.');
+      return;
+    }
+    setErrorGuardar('');
+    const enCatalogo = catalogo.find((c) => c._id === l.productoCatalogoId);
+    const p = enCatalogo || { _id: l.productoCatalogoId, item: l.productoNombre, ratio: l.categoria, cuentaContable: l.cuentaContable };
+    setProducto(p);
+    setInputProducto(p.item);
+    setCantidad(String(l.cantidad));
+    setUnidad(l.unidad);
+    setMonto(String(l.monto));
+    setMotivo(l.motivo);
+    setEditandoId(l.id);
   }
 
   function quitarLinea(id) {
+    if (id === editandoId) limpiarEditor('');
     setLineas((previas) => previas.filter((l) => l.id !== id));
   }
 
@@ -196,7 +286,7 @@ export default function NuevoGastoPage() {
         setErrorGuardar(`Producto que estás ingresando: ${errorLinea}. Complétalo o bórralo para guardar la boleta.`);
         return;
       }
-      todas = [...lineas, crearLinea({ productoSeleccionado: producto, cantidad, unidad, monto, motivo })];
+      todas = incorporar(lineas);
     }
 
     const errorValidacion = validarDocumento({ local, fecha, folio, medioPago, fotos, lineas: todas, hoy: fechaLocalISO(new Date()) });
@@ -206,14 +296,21 @@ export default function NuevoGastoPage() {
     setGuardando(true);
     setExito(null);
     try {
-      const payload = armarPayloadDocumento({ claveDocumento: claveRef.current, local, folio, fecha, medioPago, lineas: todas, confirmarFolioRepetido });
+      const payload = editando
+        ? armarPayloadCorreccion({ claveEdicion: claveRef.current, folio, fecha, medioPago, lineas: todas, confirmarFolioRepetido })
+        : armarPayloadDocumento({ claveDocumento: claveRef.current, local, folio, fecha, medioPago, lineas: todas, confirmarFolioRepetido });
       const documento = await crearDocumentoConFotos(
         payload,
         fotos.map(({ id, archivo }) => ({ id, archivo })),
-        { urlsPrevias: urlsFotosRef.current }
+        { urlsPrevias: urlsFotosRef.current, ...(editando ? { enviar: (p) => corregirBoleta(idCorregir, p) } : {}) }
       );
-      setExito({ numero: documento.numeroDocumento, productos: todas.length, total: totalDocumento(todas), folio: documento.folio });
-      limpiarFormulario();
+      const resumen = { numero: documento.numeroDocumento, productos: todas.length, total: totalDocumento(todas), folio: documento.folio };
+      if (editando) {
+        setCorregida(resumen); // la boleta quedó pendiente de revisión: ya no se edita
+      } else {
+        setExito(resumen);
+        limpiarFormulario();
+      }
       if (inicioRef.current && inicioRef.current.scrollIntoView) inicioRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       if (err.urlsFotos) urlsFotosRef.current = { ...urlsFotosRef.current, ...err.urlsFotos };
@@ -228,17 +325,45 @@ export default function NuevoGastoPage() {
     }
   }
 
-  const sinLocales = !cargandoLocales && !errorLocales && locales.length === 0;
+  const sinLocales = !editando && !cargandoLocales && !errorLocales && locales.length === 0;
+  // Un administrador solo corrige boletas rechazadas (el servidor también lo exige); el MASTER puede corregir cualquiera.
+  const noCorregible = editando && boletaOriginal && boletaOriginal.estado !== 'RECHAZADO' && usuario && usuario.rol !== 'MASTER';
   const textoLocal = useMemo(() => (local ? local.nombre : ''), [local]);
+
+  if (editando && (cargandoBoleta || errorBoleta || corregida || noCorregible)) {
+    return (
+      <Box sx={{ maxWidth: 980 }}>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 2.5 }}>Corregir boleta</Typography>
+        {cargandoBoleta && <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}><CircularProgress size={20} /><Typography>Cargando la boleta…</Typography></Box>}
+        {errorBoleta && <Alert severity="error" sx={{ mb: 2 }}>No se pudo cargar la boleta. {errorBoleta}</Alert>}
+        {noCorregible && <Alert severity="warning" sx={{ mb: 2 }}>Esta boleta no está rechazada, por eso no se puede corregir.</Alert>}
+        {corregida && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            Boleta{corregida.numero ? ` N° ${corregida.numero}` : ''} corregida: {textoProductos(corregida.productos)} por {clp(corregida.total)}.
+            Quedó pendiente de revisión.
+          </Alert>
+        )}
+        {!cargandoBoleta && <Button component={RouterLink} to="/gastos" variant="outlined">Volver a los gastos</Button>}
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ maxWidth: 980 }}>
       <Box ref={inicioRef} sx={{ mb: 2.5 }}>
-        <Typography variant="h5" fontWeight={700}>Nuevo gasto</Typography>
+        <Typography variant="h5" fontWeight={700}>
+          {editando ? `Corregir boleta${boletaOriginal && boletaOriginal.numeroDocumento != null ? ` N° ${boletaOriginal.numeroDocumento}` : ''}` : 'Nuevo gasto'}
+        </Typography>
         <Typography variant="body2" color="text.secondary">
-          Registra una boleta o factura con uno o más productos.
+          {editando ? 'Corrige lo que se pidió y envíala de nuevo: quedará pendiente de revisión.' : 'Registra una boleta o factura con uno o más productos.'}
         </Typography>
       </Box>
+
+      {editando && boletaOriginal && boletaOriginal.motivoRechazo && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <strong>Rechazada{boletaOriginal.revisadoPor && boletaOriginal.revisadoPor.nombre ? ` por ${boletaOriginal.revisadoPor.nombre}` : ''}:</strong> {boletaOriginal.motivoRechazo}
+        </Alert>
+      )}
 
       {exito && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setExito(null)}>
@@ -313,7 +438,7 @@ export default function NuevoGastoPage() {
                   <CloseIcon fontSize="small" />
                 </IconButton>
                 <Typography variant="caption" color="text.secondary" noWrap display="block">
-                  {f.archivo.name} · {(f.archivo.size / 1024).toFixed(0)} KB
+                  {f.archivo ? `${f.archivo.name} · ${(f.archivo.size / 1024).toFixed(0)} KB` : 'Foto ya subida'}
                 </Typography>
               </Box>
             ))}
@@ -357,19 +482,22 @@ export default function NuevoGastoPage() {
                   <TableCell align="right">Cantidad</TableCell>
                   <TableCell align="right">Monto</TableCell>
                   <TableCell>Motivo</TableCell>
-                  <TableCell align="center">Quitar</TableCell>
+                  <TableCell align="center">Acciones</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {lineas.map((l, i) => (
-                  <TableRow key={l.id}>
+                  <TableRow key={l.id} sx={l.id === editandoId ? { bgcolor: '#FFF8E6' } : undefined}>
                     <TableCell>{i + 1}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>{l.productoNombre}</TableCell>
                     <TableCell sx={{ color: COLOR.muted }}>{humanizar(l.cuentaContable)}</TableCell>
                     <TableCell align="right">{l.cantidad} {l.unidad.toLowerCase()}</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700 }}>{clp(l.monto)}</TableCell>
                     <TableCell sx={{ maxWidth: 260 }}>{l.motivo}</TableCell>
-                    <TableCell align="center">
+                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
+                      <IconButton size="small" onClick={() => editarLinea(l)} aria-label={`Editar ${l.productoNombre}`}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
                       <IconButton size="small" color="error" onClick={() => quitarLinea(l.id)} aria-label={`Quitar ${l.productoNombre}`}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
@@ -396,7 +524,7 @@ export default function NuevoGastoPage() {
           </Alert>
         )}
 
-        <Typography variant="body2" fontWeight={600} mb={1.5}>{lineas.length > 0 ? 'Otro producto' : 'Producto'}</Typography>
+        <Typography variant="body2" fontWeight={600} mb={1.5}>{editandoId ? 'Editando un producto' : lineas.length > 0 ? 'Otro producto' : 'Producto'}</Typography>
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: '2fr 1fr 1fr 1fr' } }}>
           <Autocomplete
             options={catalogo}
@@ -445,9 +573,12 @@ export default function NuevoGastoPage() {
             placeholder="¿Cuál es el motivo de este gasto?"
             sx={{ flex: 1, minWidth: 260 }}
           />
-          <Button variant="outlined" startIcon={<AddIcon />} onClick={agregarLinea} sx={{ mt: 0.5, py: 1.1 }}>
-            Agregar producto
+          <Button variant="outlined" startIcon={editandoId ? <EditIcon /> : <AddIcon />} onClick={agregarLinea} sx={{ mt: 0.5, py: 1.1 }}>
+            {editandoId ? 'Actualizar producto' : 'Agregar producto'}
           </Button>
+          {editandoId && (
+            <Button color="inherit" onClick={() => limpiarEditor('')} sx={{ mt: 0.5, py: 1.1 }}>Cancelar edición</Button>
+          )}
         </Box>
         <Typography variant="caption" color="text.secondary" display="block" mt={1}>
           Si la boleta trae más productos, agrégalos uno a uno. Al guardar, el producto que tengas escrito se agrega solo.
@@ -464,7 +595,7 @@ export default function NuevoGastoPage() {
         startIcon={guardando ? <CircularProgress size={18} color="inherit" /> : null}
         sx={{ px: 5, py: 1.3 }}
       >
-        {guardando ? 'Guardando…' : 'Guardar boleta'}
+        {guardando ? (editando ? 'Enviando…' : 'Guardando…') : editando ? 'Enviar corrección' : 'Guardar boleta'}
       </Button>
 
       <Dialog open={!!folioRepetido} onClose={() => setFolioRepetido(null)} maxWidth="xs" fullWidth>

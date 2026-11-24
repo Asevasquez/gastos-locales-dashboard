@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { MESES_ES, formatearFechaGasto } from './fechas';
+import { ETIQUETA_ESTADO, estadoDe } from './revision';
 
 const ETIQUETA_MEDIO_PAGO = {
   EFECTIVO: 'Efectivo',
@@ -16,6 +17,7 @@ const ETIQUETA_MEDIO_PAGO = {
 // boleta o factura (varios productos de una misma boleta repiten el mismo folio); queda vacío en los gastos
 // anteriores a los folios. CORRELATIVO es el número que asigna el sistema a cada documento (1, 2, 3…): todos los
 // productos de una misma boleta comparten el mismo, y no se reutiliza aunque se elimine un gasto.
+// ESTADO (al final) es el resultado de la revisión: Pendiente, Aprobado o Rechazado.
 export function exportarGastosExcel(gastos, nombreArchivo) {
   const filas = gastos.map((g) => {
     const fecha = new Date(g.fecha);
@@ -36,7 +38,9 @@ export function exportarGastosExcel(gastos, nombreArchivo) {
       // como texto: así Excel conserva los ceros a la izquierda ("001234")
       FOLIO: g.folio ? String(g.folio) : '',
       // como número: así Excel lo ordena y suma bien
-      CORRELATIVO: g.numeroDocumento == null ? '' : g.numeroDocumento
+      CORRELATIVO: g.numeroDocumento == null ? '' : g.numeroDocumento,
+      // Pendiente / Aprobado / Rechazado (ESTATUS sigue en blanco, como en la planilla de referencia)
+      ESTADO: ETIQUETA_ESTADO[estadoDe(g)]
     };
   });
 

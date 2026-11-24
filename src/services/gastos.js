@@ -42,13 +42,15 @@ export async function crearDocumento(payload) {
 // sola vez: si el envío falla, el error trae `urlsFotos` ({ [id de la foto]: dirección }) con las que ya se
 // subieron, para reintentar (por ejemplo, tras preguntar por un folio repetido) subiendo solo las que faltan.
 //   fotos: [{ id, archivo }]      urlsPrevias: { [id]: dirección } de intentos anteriores
-export async function crearDocumentoConFotos(payloadSinFotos, fotos, { urlsPrevias = {} } = {}) {
+// `enviar` permite usar el mismo flujo para corregir una boleta rechazada (las fotos que ya estaban llegan en
+// `urlsPrevias` y no se vuelven a subir).
+export async function crearDocumentoConFotos(payloadSinFotos, fotos, { urlsPrevias = {}, enviar = crearDocumento } = {}) {
   const urls = { ...urlsPrevias };
   try {
     for (const foto of fotos) {
       if (!urls[foto.id]) urls[foto.id] = await subirFoto(foto.archivo);
     }
-    return await crearDocumento({ ...payloadSinFotos, fotosBoletaUrls: fotos.map((foto) => urls[foto.id]) });
+    return await enviar({ ...payloadSinFotos, fotosBoletaUrls: fotos.map((foto) => urls[foto.id]) });
   } catch (err) {
     if (err && typeof err === 'object') err.urlsFotos = urls;
     throw err;

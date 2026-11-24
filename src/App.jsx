@@ -34,6 +34,14 @@ export default function App() {
               }
             />
             <Route
+              path="/gastos/:id/corregir"
+              element={
+                <RutaProtegida rolesPermitidos={['ADMINISTRADOR', 'MASTER']}>
+                  <NuevoGastoPage />
+                </RutaProtegida>
+              }
+            />
+            <Route
               path="/catalogo"
               element={
                 <RutaProtegida rolesPermitidos={['MASTER']}>

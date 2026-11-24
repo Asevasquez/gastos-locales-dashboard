@@ -101,3 +101,24 @@ export function armarPayloadDocumento({ claveDocumento, local, folio, fecha, med
     ...(confirmarFolioRepetido ? { confirmarFolioRepetido: true } : {})
   };
 }
+
+// Cuerpo de la corrección de una boleta rechazada (sin las fotos: las agrega el servicio). Cada producto que ya existía
+// lleva su `gastoId`; los demás son nuevos, y los que ya no estén se quitan. `claveEdicion` identifica este intento: si
+// se repite (reintento), el servidor no duplica nada.
+export function armarPayloadCorreccion({ claveEdicion, folio, fecha, medioPago, lineas, confirmarFolioRepetido }) {
+  return {
+    claveEdicion,
+    folio: String(folio).trim(),
+    fecha,
+    medioPago,
+    items: lineas.map((l) => ({
+      ...(l.gastoId ? { gastoId: l.gastoId } : {}),
+      productoCatalogoId: l.productoCatalogoId,
+      cantidad: l.cantidad,
+      unidadMedida: l.unidad,
+      monto: l.monto,
+      motivo: l.motivo
+    })),
+    ...(confirmarFolioRepetido ? { confirmarFolioRepetido: true } : {})
+  };
+}

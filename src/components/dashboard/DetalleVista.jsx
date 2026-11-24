@@ -1,16 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert, Badge, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputAdornment,
-  Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
+  MenuItem, Select, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SearchIcon from '@mui/icons-material/Search';
+import EditIcon from '@mui/icons-material/Edit';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { listarGastos, eliminarGasto } from '../../services/gastos';
-import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Tarjeta, clp, humanizar } from './comunes';
+import { reabrirBoletas } from '../../services/revision';
+import { describirError } from '../../utils/errores';
+import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, ChipEstado, Tarjeta, clp, humanizar } from './comunes';
 import { formatearFechaGasto } from '../../utils/fechas';
 import { fotosDe } from '../../utils/fotos';
 import { puedeEliminarGasto } from '../../utils/permisos';
+import { FILTROS_ESTADO, claveBoleta, coincideEstado, estadoDe, puedeCorregirBoleta, puedeReabrir } from '../../utils/revision';
 import { SIN_REPETIDOS, claveRepetido, detectarRepetidos } from '../../utils/duplicados';
 
 const MOTIVO_MIN = 3;
@@ -56,8 +62,14 @@ export function DialogEliminarGasto({ gasto, onCancelar, onConfirmar, enviando =
 }
 
 // Tabla de gastos (pura: recibe los gastos ya cargados). Búsqueda y paginación en el navegador.
-// `puedeEliminar(gasto)` decide si se muestra el botón de eliminar, al lado de la boleta.
-export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, repetidos = SIN_REPETIDOS }) {
+// `puedeEliminar(gasto)` decide si se muestra el botón de eliminar, al lado de la boleta; `puedeCorregir(gasto)` y
+// `puedeReabrir(gasto)`, los de corregir una boleta rechazada y reabrir su revisión.
+// El filtro de estado empieza en "Vigentes": no muestra los rechazados, igual que los totales.
+export function DetalleTabla({
+  gastos, puedeEliminar, onVerBoleta, onEliminar, repetidos = SIN_REPETIDOS,
+  puedeCorregir = () => false, onCorregir = () => {}, puedeReabrir: puedeReabrirGasto = () => false, onReabrir = () => {}
+}) {
+  const [estadoFiltro, setEstadoFiltro] = useState('VIGENTES');
   const [soloRepetidos, setSoloRepetidos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [pagina, setPagina] = useState(0);
@@ -65,10 +77,10 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    let lista = gastos;
+    let lista = gastos.filter((g) => coincideEstado(estadoFiltro, g));
     if (soloRepetidos) {
       // los repetidos quedan agrupados (los idénticos juntos, el más antiguo primero)
-      lista = gastos
+      lista = lista
         .filter((g) => repetidos.porId.has(g._id))
         .sort((a, b) => claveRepetido(a).localeCompare(claveRepetido(b)) || new Date(a.createdAt) - new Date(b.createdAt));
     }
@@ -77,7 +89,7 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
       [g.local?.nombre, g.productoNombre, g.motivo, g.cuentaContable, g.categoria, g.usuario?.nombre, g.folio, g.numeroDocumento]
         .some((v) => v && String(v).toLowerCase().includes(q))
     );
-  }, [gastos, busqueda, soloRepetidos, repetidos]);
+  }, [gastos, busqueda, soloRepetidos, repetidos, estadoFiltro]);
 
   // Cuántos productos tiene cada documento (boleta o factura), según los gastos cargados.
   const productosPorDocumento = useMemo(() => {
@@ -94,14 +106,25 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
       titulo="Detalle de gastos"
       subtitulo={`${filtrados.length} ${filtrados.length === 1 ? 'gasto' : 'gastos'} · ${clp(total)}`}
       derecha={
-        <TextField
-          size="small"
-          placeholder="Buscar por local, ítem, motivo…"
-          value={busqueda}
-          onChange={(e) => { setBusqueda(e.target.value); setPagina(0); }}
-          sx={{ width: 280 }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
-        />
+        <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Select
+            size="small"
+            value={estadoFiltro}
+            onChange={(e) => { setEstadoFiltro(e.target.value); setPagina(0); }}
+            inputProps={{ 'aria-label': 'Estado' }}
+            sx={{ minWidth: 150 }}
+          >
+            {FILTROS_ESTADO.map((f) => <MenuItem key={f.valor} value={f.valor}>Estado: {f.etiqueta.toLowerCase()}</MenuItem>)}
+          </Select>
+          <TextField
+            size="small"
+            placeholder="Buscar por local, ítem, motivo…"
+            value={busqueda}
+            onChange={(e) => { setBusqueda(e.target.value); setPagina(0); }}
+            sx={{ width: 280 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
+          />
+        </Box>
       }
     >
       {repetidos.grupos > 0 && (
@@ -119,7 +142,7 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
         </Alert>
       )}
       <Box sx={{ overflowX: 'auto' }}>
-        <Table size="small" sx={{ minWidth: 1320 }}>
+        <Table size="small" sx={{ minWidth: 1480 }}>
           <TableHead>
             <TableRow>
               <TableCell>N°</TableCell>
@@ -131,6 +154,7 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
               <TableCell>Cuenta contable</TableCell>
               <TableCell align="right">Monto</TableCell>
               <TableCell>Medio de pago</TableCell>
+              <TableCell>Estado</TableCell>
               <TableCell>Motivo</TableCell>
               <TableCell>Registró</TableCell>
               <TableCell align="center">Acciones</TableCell>
@@ -173,6 +197,22 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
                     sx={{ bgcolor: COLOR_MEDIO_PAGO[g.medioPago]?.bg, color: COLOR_MEDIO_PAGO[g.medioPago]?.color, fontWeight: 700, fontSize: 11 }}
                   />
                 </TableCell>
+                <TableCell sx={{ maxWidth: 200 }}>
+                  <ChipEstado estado={g.estado} />
+                  {estadoDe(g) === 'RECHAZADO' && g.motivoRechazo && (
+                    <Tooltip title={g.motivoRechazo}>
+                      <Typography noWrap sx={{ fontSize: 11, color: COLOR.rojo, mt: 0.5 }}>{g.motivoRechazo}</Typography>
+                    </Tooltip>
+                  )}
+                  {estadoDe(g) !== 'PENDIENTE' && g.revisadoPor?.nombre && (
+                    <Typography sx={{ fontSize: 11, color: COLOR.muted }}>por {g.revisadoPor.nombre}</Typography>
+                  )}
+                  {estadoDe(g) === 'PENDIENTE' && g.rechazoAnterior?.motivo && (
+                    <Tooltip title={`Se rechazó por: ${g.rechazoAnterior.motivo}`}>
+                      <Typography sx={{ fontSize: 11, color: COLOR.ambar }}>Corregida tras un rechazo</Typography>
+                    </Tooltip>
+                  )}
+                </TableCell>
                 <TableCell sx={{ maxWidth: 240 }}>
                   <Tooltip title={g.motivo || ''}>
                     <Typography noWrap sx={{ fontSize: 13 }}>{g.motivo}</Typography>
@@ -185,6 +225,20 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
                       <ReceiptIcon fontSize="small" />
                     </Badge>
                   </IconButton>
+                  {puedeCorregir(g) && (
+                    <Tooltip title="Corregir la boleta rechazada">
+                      <IconButton size="small" color="primary" onClick={() => onCorregir(g)} aria-label="Corregir boleta">
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  {puedeReabrirGasto(g) && (
+                    <Tooltip title="Reabrir la revisión (vuelve a pendiente)">
+                      <IconButton size="small" onClick={() => onReabrir(g)} aria-label="Reabrir revisión">
+                        <ReplayIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                   {puedeEliminar(g) && (
                     <Tooltip title="Eliminar gasto">
                       <IconButton size="small" color="error" onClick={() => onEliminar(g)} aria-label="Eliminar gasto">
@@ -197,7 +251,7 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
             ))}
             {filtrados.length === 0 && (
               <TableRow>
-                <TableCell colSpan={12} align="center" sx={{ color: COLOR.muted, py: 4 }}>
+                <TableCell colSpan={13} align="center" sx={{ color: COLOR.muted, py: 4 }}>
                   No hay gastos que coincidan en este período.
                 </TableCell>
               </TableRow>
@@ -220,8 +274,46 @@ export function DetalleTabla({ gastos, puedeEliminar, onVerBoleta, onEliminar, r
   );
 }
 
-// Carga los gastos del período y filtros activos y maneja la eliminación (con motivo obligatorio).
+// Confirmación de reabrir la revisión: la boleta vuelve a "pendiente" para que se revise de nuevo. El motivo es opcional.
+export function DialogReabrir({ gasto, onCancelar, onConfirmar, enviando = false, error = '' }) {
+  const [motivo, setMotivo] = useState('');
+  return (
+    <Dialog open={!!gasto} onClose={enviando ? undefined : onCancelar} maxWidth="xs" fullWidth>
+      <DialogTitle>Reabrir revisión</DialogTitle>
+      <DialogContent>
+        {gasto && (
+          <>
+            <Typography sx={{ mb: 2, fontSize: 14 }}>
+              La boleta{gasto.numeroDocumento != null ? ` N° ${gasto.numeroDocumento}` : ''} ({gasto.local?.nombre}) volverá a quedar
+              pendiente y habrá que revisarla de nuevo. Quedará registrado en el historial.
+            </Typography>
+            <TextField
+              fullWidth
+              label="Motivo (opcional)"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              helperText="Por ejemplo: «Aprobé la boleta equivocada»."
+            />
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+          </>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onCancelar} disabled={enviando}>Cancelar</Button>
+        <Button variant="contained" disabled={enviando} onClick={() => onConfirmar(motivo.trim())}>
+          {enviando ? 'Reabriendo…' : 'Reabrir revisión'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// Carga los gastos del período y filtros activos y maneja la eliminación (con motivo obligatorio), corregir y reabrir.
 export default function DetalleVista({ parametros, usuario, onVerBoleta, version = 0, onCambio }) {
+  const navegar = useNavigate();
+  const [aReabrir, setAReabrir] = useState(null);
+  const [errorReabrir, setErrorReabrir] = useState('');
+  const [reabriendo, setReabriendo] = useState(false);
   const [gastos, setGastos] = useState(null);
   const [error, setError] = useState('');
   const [aEliminar, setAEliminar] = useState(null);
@@ -256,6 +348,24 @@ export default function DetalleVista({ parametros, usuario, onVerBoleta, version
     }
   }
 
+  async function confirmarReabrir(motivo) {
+    setReabriendo(true);
+    setErrorReabrir('');
+    try {
+      const r = await reabrirBoletas({ documentos: [claveBoleta(aReabrir)], motivo });
+      if (r.documentos === 0) {
+        setErrorReabrir((r.omitidos && r.omitidos[0] && r.omitidos[0].error) || 'No se pudo reabrir la revisión');
+        return;
+      }
+      setAReabrir(null);
+      if (onCambio) onCambio();
+    } catch (e) {
+      setErrorReabrir(describirError(e));
+    } finally {
+      setReabriendo(false);
+    }
+  }
+
   const repetidos = useMemo(() => (gastos ? detectarRepetidos(gastos) : SIN_REPETIDOS), [gastos]);
 
   if (error) return <Alert severity="error">{error}</Alert>;
@@ -266,8 +376,20 @@ export default function DetalleVista({ parametros, usuario, onVerBoleta, version
         gastos={gastos}
         repetidos={repetidos}
         puedeEliminar={(g) => puedeEliminarGasto(usuario, g)}
+        puedeCorregir={(g) => puedeCorregirBoleta(usuario, g)}
+        onCorregir={(g) => navegar(`/gastos/${encodeURIComponent(claveBoleta(g))}/corregir`)}
+        puedeReabrir={(g) => puedeReabrir(usuario, g)}
+        onReabrir={(g) => { setErrorReabrir(''); setAReabrir(g); }}
         onVerBoleta={onVerBoleta}
         onEliminar={abrirEliminar}
+      />
+      <DialogReabrir
+        key={aReabrir ? aReabrir._id : 'cerrado-reabrir'}
+        gasto={aReabrir}
+        enviando={reabriendo}
+        error={errorReabrir}
+        onCancelar={() => setAReabrir(null)}
+        onConfirmar={confirmarReabrir}
       />
       <DialogEliminarGasto
         key={aEliminar ? aEliminar._id : 'cerrado'}

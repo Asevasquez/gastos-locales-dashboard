@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Paper, Typography } from '@mui/material';
+import { Box, Chip, Paper, Typography } from '@mui/material';
+import { COLOR_ESTADO, ETIQUETA_ESTADO, estadoDe } from '../../utils/revision';
 
 export const COLOR = {
   rojo: '#F20000',
@@ -161,5 +162,17 @@ export function Cargando({ texto = 'Cargando…' }) {
     <Box sx={{ py: 8, textAlign: 'center', color: COLOR.muted }}>
       <Typography variant="body2">{texto}</Typography>
     </Box>
+  );
+}
+
+// Estado de revisión de un gasto o de una boleta: Pendiente, Aprobado o Rechazado.
+export function ChipEstado({ estado, sx }) {
+  const e = estadoDe({ estado });
+  return (
+    <Chip
+      size="small"
+      label={ETIQUETA_ESTADO[e]}
+      sx={{ fontWeight: 700, fontSize: 11, bgcolor: COLOR_ESTADO[e].bg, color: COLOR_ESTADO[e].color, ...sx }}
+    />
   );
 }
