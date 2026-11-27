@@ -5,15 +5,19 @@ import {
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import { listarBoletas, revisarBoletas } from '../../services/revision';
-import { MOTIVO_RECHAZO_MIN, puedeCorregirBoleta, puedeRevisarBoleta } from '../../utils/revision';
+import { MOTIVOS_RAPIDOS, MOTIVO_MAX, MOTIVO_RECHAZO_MIN, armarMotivoRechazo, puedeCorregirBoleta, puedeRevisarBoleta } from '../../utils/revision';
 import { formatearFechaGasto, formatearFechaHora } from '../../utils/fechas';
 import { describirError } from '../../utils/errores';
 import { COLOR, COLOR_MEDIO_PAGO, ETIQUETA_MEDIO_PAGO, Cargando, Tarjeta, clp, humanizar } from './comunes';
 
 // Pide el motivo del rechazo: es obligatorio, y es lo que verá quien subió la boleta para saber qué corregir.
+// Se marcan uno o varios motivos frecuentes y, si se quiere, se agrega un comentario: el motivo final une todo.
 export function DialogRechazar({ boleta, onCancelar, onConfirmar, enviando = false, error = '' }) {
-  const [motivo, setMotivo] = useState('');
-  const valido = motivo.trim().length >= MOTIVO_RECHAZO_MIN;
+  const [marcados, setMarcados] = useState([]);
+  const [comentario, setComentario] = useState('');
+  const motivo = armarMotivoRechazo(marcados, comentario);
+  const valido = motivo.length >= MOTIVO_RECHAZO_MIN && motivo.length <= MOTIVO_MAX;
+  const alternar = (m) => setMarcados((previos) => (previos.includes(m) ? previos.filter((x) => x !== m) : [...previos, m]));
   return (
     <Dialog open={!!boleta} onClose={enviando ? undefined : onCancelar} maxWidth="xs" fullWidth>
       <DialogTitle>Rechazar boleta{boleta && boleta.numeroDocumento != null ? ` N° ${boleta.numeroDocumento}` : ''}</DialogTitle>
@@ -26,23 +30,46 @@ export function DialogRechazar({ boleta, onCancelar, onConfirmar, enviando = fal
                 Folio {boleta.folio || '—'} · la subió {boleta.subidoPor?.nombre}
               </Typography>
             </Box>
+            <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>Motivos frecuentes (marca los que apliquen)</Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+              {MOTIVOS_RAPIDOS.map((m) => {
+                const activo = marcados.includes(m);
+                return (
+                  <Chip
+                    key={m}
+                    label={m}
+                    clickable
+                    color={activo ? 'error' : 'default'}
+                    variant={activo ? 'filled' : 'outlined'}
+                    onClick={() => alternar(m)}
+                    aria-pressed={activo}
+                  />
+                );
+              })}
+            </Box>
             <TextField
-              autoFocus
               multiline
-              minRows={3}
+              minRows={2}
               fullWidth
-              label="Motivo del rechazo"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              helperText={`Obligatorio (mínimo ${MOTIVO_RECHAZO_MIN} caracteres). Quien la subió lo verá y podrá corregir la boleta.`}
+              label="Comentario adicional"
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              inputProps={{ maxLength: 300 }}
+              helperText={`Opcional si marcaste un motivo; si no, escribe al menos ${MOTIVO_RECHAZO_MIN} caracteres.`}
             />
+            {motivo && (
+              <Box sx={{ bgcolor: '#FBE3E3', borderRadius: 2, p: 1.5, mt: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block">Quien subió la boleta verá:</Typography>
+                <Typography fontSize={14} fontWeight={600} data-testid="motivo-final">{motivo}</Typography>
+              </Box>
+            )}
             {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
           </>
         )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onCancelar} disabled={enviando}>Cancelar</Button>
-        <Button color="error" variant="contained" disabled={!valido || enviando} onClick={() => onConfirmar(motivo.trim())}>
+        <Button color="error" variant="contained" disabled={!valido || enviando} onClick={() => onConfirmar(motivo)}>
           {enviando ? 'Rechazando…' : 'Rechazar boleta'}
         </Button>
       </DialogActions>

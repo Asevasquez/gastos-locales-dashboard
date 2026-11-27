@@ -61,3 +61,28 @@ export function coincideEstado(filtro, gasto) {
   const f = FILTROS_ESTADO.find((x) => x.valor === filtro) || FILTROS_ESTADO[0];
   return f.coincide(estadoDe(gasto));
 }
+
+// ---------- Motivos rápidos de rechazo ----------
+export const MOTIVOS_RAPIDOS = [
+  'Falta documento válido',
+  'Montos no coinciden',
+  'Fecha no coincide',
+  'Faltan datos de contacto',
+  'Sin foto de respaldo'
+];
+export const MOTIVO_MAX = 500; // igual que en el servidor
+
+// El motivo que ve quien subió la boleta: los motivos marcados y, si se quiere, un comentario propio, separados por ". ".
+export function armarMotivoRechazo(seleccionados, comentario) {
+  return [...(seleccionados || []), String(comentario || '').trim()].filter(Boolean).join('. ');
+}
+
+// ---------- Exportar ----------
+export const ETIQUETA_ACCION = { CREADO: 'Subido', ELIMINADO: 'Eliminado', APROBADO: 'Aprobado', RECHAZADO: 'Rechazado', EDITADO: 'Corregido', REABIERTO: 'Reabierto' };
+const SUFIJO_ESTADO = { PENDIENTE: 'pendientes', APROBADO: 'aprobados', RECHAZADO: 'rechazados' };
+
+// Nombre del archivo: el base si se exportan todos los estados; si no, con los estados elegidos (gastos-2026-11-rechazados).
+export function nombreExportacion(base, estados) {
+  const elegidos = ESTADOS.filter((e) => estados.includes(e));
+  return elegidos.length === ESTADOS.length ? base : `${base}-${elegidos.map((e) => SUFIJO_ESTADO[e]).join('-')}`;
+}

@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
-import { MESES_ES, formatearFechaGasto } from './fechas';
-import { ETIQUETA_ESTADO, estadoDe } from './revision';
+import { MESES_ES, formatearFechaGasto, formatearFechaHora } from './fechas';
+import { ETIQUETA_ACCION, ETIQUETA_ESTADO, estadoDe } from './revision';
 
 const ETIQUETA_MEDIO_PAGO = {
   EFECTIVO: 'Efectivo',
@@ -17,7 +17,8 @@ const ETIQUETA_MEDIO_PAGO = {
 // boleta o factura (varios productos de una misma boleta repiten el mismo folio); queda vacío en los gastos
 // anteriores a los folios. CORRELATIVO es el número que asigna el sistema a cada documento (1, 2, 3…): todos los
 // productos de una misma boleta comparten el mismo, y no se reutiliza aunque se elimine un gasto.
-// ESTADO (al final) es el resultado de la revisión: Pendiente, Aprobado o Rechazado.
+// ESTADO (al final) es el resultado de la revisión: Pendiente, Aprobado o Rechazado; le siguen el motivo del rechazo (si
+// está rechazado), quién revisó y cuándo.
 export function exportarGastosExcel(gastos, nombreArchivo) {
   const filas = gastos.map((g) => {
     const fecha = new Date(g.fecha);
@@ -40,7 +41,10 @@ export function exportarGastosExcel(gastos, nombreArchivo) {
       // como número: así Excel lo ordena y suma bien
       CORRELATIVO: g.numeroDocumento == null ? '' : g.numeroDocumento,
       // Pendiente / Aprobado / Rechazado (ESTATUS sigue en blanco, como en la planilla de referencia)
-      ESTADO: ETIQUETA_ESTADO[estadoDe(g)]
+      ESTADO: ETIQUETA_ESTADO[estadoDe(g)],
+      'MOTIVO RECHAZO': estadoDe(g) === 'RECHAZADO' ? g.motivoRechazo || '' : '',
+      'REVISADO POR': g.revisadoPor?.nombre || '',
+      'FECHA REVISION': g.revisadoEn ? formatearFechaHora(g.revisadoEn) : ''
     };
   });
 
@@ -55,5 +59,32 @@ export function exportarGastosExcel(gastos, nombreArchivo) {
 
   const libro = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro, hoja, 'Gastos');
+  XLSX.writeFile(libro, `${nombreArchivo}.xlsx`);
+}
+
+// Exporta el historial de eventos (subido, eliminado, aprobado, rechazado, corregido, reabierto), uno por fila, con quién lo
+// hizo, cuándo y por qué.
+export function exportarHistorialExcel(eventos, nombreArchivo) {
+  const filas = eventos.map((e) => {
+    const g = e.gasto || {};
+    return {
+      'FECHA EVENTO': formatearFechaHora(e.fechaEvento),
+      ACCION: ETIQUETA_ACCION[e.accion] || e.accion,
+      LOCAL: e.localNombre || '',
+      CORRELATIVO: g.numeroDocumento == null ? '' : g.numeroDocumento,
+      FOLIO: g.folio ? String(g.folio) : '',
+      ITEM: g.productoNombre || '',
+      DETALLE: g.cantidad == null ? '' : `${g.cantidad} ${g.unidadMedida} - ${g.motivo}`,
+      MONTO: g.monto == null ? '' : g.monto,
+      'MEDIO DE PAGO': ETIQUETA_MEDIO_PAGO[g.medioPago] || g.medioPago || '',
+      'FECHA GASTO': g.fecha ? formatearFechaGasto(g.fecha) : '',
+      'SUBIDO POR': g.subidoPor?.nombre || '',
+      'REALIZADO POR': e.realizadoPor?.nombre || '',
+      ROL: e.realizadoPor?.rol || '',
+      MOTIVO: e.motivoEliminacion || e.motivoRevision || ''
+    };
+  });
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filas), 'Historial');
   XLSX.writeFile(libro, `${nombreArchivo}.xlsx`);
 }

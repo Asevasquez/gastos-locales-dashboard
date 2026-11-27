@@ -122,3 +122,14 @@ export function armarPayloadCorreccion({ claveEdicion, folio, fecha, medioPago, 
     ...(confirmarFolioRepetido ? { confirmarFolioRepetido: true } : {})
   };
 }
+
+// Lo que se le pregunta antes de guardar: un gasto, o una boleta con varios productos, por el monto total.
+//   totalTexto: el monto ya con formato ($5.543). Al corregir se indica que quedará pendiente de revisión.
+export function mensajeConfirmacion({ productos, totalTexto, correccion = false, numero = null }) {
+  if (correccion) {
+    return `Se enviará la corrección de la boleta${numero ? ` N° ${numero}` : ''} con ${textoProductos(productos)} por el monto ${totalTexto}. Quedará pendiente de revisión.`;
+  }
+  return productos === 1
+    ? `Se agregará un gasto por el monto ${totalTexto}.`
+    : `Se agregará una boleta con ${productos} productos por el monto ${totalTexto}.`;
+}

@@ -15,12 +15,13 @@ import { obtenerCatalogoCompleto } from '../services/catalogo';
 import { crearDocumentoConFotos } from '../services/gastos';
 import { corregirBoleta, obtenerBoleta } from '../services/revision';
 import { useAuth } from '../context/AuthContext';
-import { fechaLocalISO } from '../utils/fechas';
+import { fechaLocalISO, formatearFechaGasto } from '../utils/fechas';
+import { formatearMiles, soloDigitos } from '../utils/montos';
 import { describirError } from '../utils/errores';
 import { MAX_FOTO_ENVIO_MB, MAX_FOTOS, claveFoto, prepararFoto, validarFoto } from '../utils/fotos';
 import {
-  FOLIO_MAX, UNIDADES, armarPayloadCorreccion, armarPayloadDocumento, claveNueva, crearLinea, editorVacio, textoProductos,
-  totalDocumento, validarDocumento, validarLinea
+  FOLIO_MAX, UNIDADES, armarPayloadCorreccion, armarPayloadDocumento, claveNueva, crearLinea, editorVacio, mensajeConfirmacion,
+  textoProductos, totalDocumento, validarDocumento, validarLinea
 } from '../utils/documento';
 import { COLOR, ETIQUETA_MEDIO_PAGO, clp, humanizar } from '../components/dashboard/comunes';
 
@@ -69,6 +70,7 @@ export default function NuevoGastoPage() {
   const [errorGuardar, setErrorGuardar] = useState('');
   const [exito, setExito] = useState(null);
   const [folioRepetido, setFolioRepetido] = useState(null); // mensaje del servidor cuando el folio ya existe
+  const [confirmacion, setConfirmacion] = useState(null); // { productos, total }: lo que se le pregunta antes de guardar
 
   // corrección de una boleta rechazada
   const [cargandoBoleta, setCargandoBoleta] = useState(editando);
@@ -251,7 +253,7 @@ export default function NuevoGastoPage() {
     setInputProducto(p.item);
     setCantidad(String(l.cantidad));
     setUnidad(l.unidad);
-    setMonto(String(l.monto));
+    setMonto(String(Math.round(l.monto))); // los montos son enteros (pesos)
     setMotivo(l.motivo);
     setEditandoId(l.id);
   }
@@ -274,7 +276,8 @@ export default function NuevoGastoPage() {
     // el local y la fecha se dejan: suelen ser los mismos de la boleta siguiente
   }
 
-  async function guardar({ confirmarFolioRepetido = false } = {}) {
+  // `confirmado`: la persona ya respondió "Sí" a la pregunta de antes de guardar (el diálogo de folio repetido no la repite).
+  async function guardar({ confirmarFolioRepetido = false, confirmado = false } = {}) {
     if (enCursoRef.current) return;
     setErrorGuardar('');
 
@@ -291,6 +294,12 @@ export default function NuevoGastoPage() {
 
     const errorValidacion = validarDocumento({ local, fecha, folio, medioPago, fotos, lineas: todas, hoy: fechaLocalISO(new Date()) });
     if (errorValidacion) { setErrorGuardar(errorValidacion); return; }
+
+    // Antes de guardar, se confirma el monto: "Se agregará un gasto por el monto $5.543" (Sí / No).
+    if (!confirmado) {
+      setConfirmacion({ productos: todas.length, total: totalDocumento(todas) });
+      return;
+    }
 
     enCursoRef.current = true;
     setGuardando(true);
@@ -557,11 +566,10 @@ export default function NuevoGastoPage() {
           </TextField>
           <TextField
             label="Monto de este producto"
-            type="number"
-            value={monto}
-            onChange={(e) => setMonto(e.target.value)}
+            value={formatearMiles(monto)}
+            onChange={(e) => setMonto(soloDigitos(e.target.value))}
             InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
-            inputProps={{ min: 0, step: 1 }}
+            inputProps={{ inputMode: 'numeric' }}
           />
         </Box>
         <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -598,6 +606,33 @@ export default function NuevoGastoPage() {
         {guardando ? (editando ? 'Enviando…' : 'Guardando…') : editando ? 'Enviar corrección' : 'Guardar boleta'}
       </Button>
 
+      <Dialog open={!!confirmacion} onClose={() => setConfirmacion(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{editando ? 'Confirmar corrección' : 'Confirmar gasto'}</DialogTitle>
+        <DialogContent>
+          {confirmacion && (
+            <>
+              <DialogContentText sx={{ color: 'text.primary', fontWeight: 600, mb: 2 }}>
+                {mensajeConfirmacion({
+                  productos: confirmacion.productos, totalTexto: clp(confirmacion.total), correccion: editando,
+                  numero: editando && boletaOriginal ? boletaOriginal.numeroDocumento : null
+                })}
+              </DialogContentText>
+              <Box sx={{ bgcolor: 'background.default', borderRadius: 2, p: 1.5, fontSize: 13, lineHeight: 1.8 }}>
+                <div><strong>Local:</strong> {local ? local.nombre : ''}</div>
+                <div><strong>Folio:</strong> {String(folio).trim()}</div>
+                <div><strong>Fecha:</strong> {formatearFechaGasto(`${fecha}T00:00:00.000Z`)}</div>
+                <div><strong>Medio de pago:</strong> {ETIQUETA_MEDIO_PAGO[medioPago] || medioPago}</div>
+              </Box>
+              <Typography variant="body2" sx={{ mt: 2 }}>¿Confirmas?</Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setConfirmacion(null)}>No</Button>
+          <Button variant="contained" onClick={() => { setConfirmacion(null); guardar({ confirmado: true }); }} autoFocus>Sí</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={!!folioRepetido} onClose={() => setFolioRepetido(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Folio ya registrado</DialogTitle>
         <DialogContent>
@@ -607,7 +642,7 @@ export default function NuevoGastoPage() {
           <Button onClick={() => setFolioRepetido(null)}>Cancelar</Button>
           <Button
             variant="contained"
-            onClick={() => { setFolioRepetido(null); guardar({ confirmarFolioRepetido: true }); }}
+            onClick={() => { setFolioRepetido(null); guardar({ confirmarFolioRepetido: true, confirmado: true }); }}
           >
             Es otro documento
           </Button>

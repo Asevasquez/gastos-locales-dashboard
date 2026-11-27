@@ -6,13 +6,15 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { listarGastos } from '../services/gastos';
+import { obtenerHistorialGastos } from '../services/historial';
 import { listarLocales } from '../services/locales';
 import { obtenerResumenRevision } from '../services/revision';
-import { claveBoleta, puedeRevisar, puedeSubirGastos } from '../utils/revision';
+import { claveBoleta, nombreExportacion, puedeRevisar, puedeSubirGastos } from '../utils/revision';
 import { obtenerDashboardResumen, obtenerDashboardLocales, obtenerDashboardControl } from '../services/dashboard';
 import { useAuth } from '../context/AuthContext';
-import { exportarGastosExcel } from '../utils/exportarExcel';
-import { diaMesLargo, fechaLocalISO, mesActual, opcionesMeses, rangoSemana } from '../utils/fechas';
+import { exportarGastosExcel, exportarHistorialExcel } from '../utils/exportarExcel';
+import DialogExportar from '../components/dashboard/DialogExportar';
+import { diaMesLargo, fechaLocalISO, mesActual, opcionesMeses, rangoInstantes, rangoSemana } from '../utils/fechas';
 import FiltroLocales from '../components/dashboard/FiltroLocales';
 import ResumenVista from '../components/dashboard/ResumenVista';
 import LocalesVista from '../components/dashboard/LocalesVista';
@@ -105,17 +107,43 @@ export default function GastosPage() {
     return texto;
   }
 
-  async function exportar() {
+  const [dialogoExportar, setDialogoExportar] = useState(false);
+  const periodoTexto = periodo === 'semana' ? `Semana del ${parametros.desde} al ${parametros.hasta}` : `Mes ${mes}`;
+
+  // En la pestaña Historial el botón exporta los eventos (subidos, eliminados, aprobados, rechazados…); en las demás, los
+  // gastos del período, con los estados que se elijan.
+  function alExportar() {
+    if (tab === 'historial') exportarHistorial();
+    else setDialogoExportar(true);
+  }
+
+  async function exportarHistorial() {
     setExportando(true);
     try {
-      // lo rechazado no se exporta (no suma en los totales); la columna ESTADO distingue lo pendiente de lo aprobado
-      const gastos = await listarGastos({ ...parametros, estado: 'PENDIENTE,APROBADO' });
-      if (gastos.length === 0) {
-        window.alert('No hay gastos para exportar con los filtros actuales.');
+      const eventos = await obtenerHistorialGastos({ ...rangoInstantes(parametros), locales: parametros.locales, medioPago: parametros.medioPago });
+      if (eventos.length === 0) {
+        window.alert('No hay movimientos en el historial para exportar con los filtros actuales.');
         return;
       }
-      const nombre = periodo === 'semana' ? `gastos-semana-${parametros.desde}-al-${parametros.hasta}` : `gastos-${mes}`;
-      exportarGastosExcel(gastos, nombre);
+      exportarHistorialExcel(eventos, periodo === 'semana' ? `historial-semana-${parametros.desde}-al-${parametros.hasta}` : `historial-${mes}`);
+    } catch (e) {
+      window.alert(e.response?.data?.error || 'No se pudo exportar');
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function exportar(estados) {
+    setExportando(true);
+    try {
+      const gastos = await listarGastos({ ...parametros, estado: estados.join(',') });
+      if (gastos.length === 0) {
+        window.alert('No hay gastos para exportar con los filtros y estados elegidos.');
+        return;
+      }
+      const base = periodo === 'semana' ? `gastos-semana-${parametros.desde}-al-${parametros.hasta}` : `gastos-${mes}`;
+      exportarGastosExcel(gastos, nombreExportacion(base, estados));
+      setDialogoExportar(false);
     } catch (e) {
       window.alert(e.response?.data?.error || 'No se pudo exportar');
     } finally {
@@ -135,7 +163,7 @@ export default function GastosPage() {
           <Typography variant="body2" color="text.secondary">{subtitulo()}</Typography>
         </Box>
         {!sinPeriodo && (
-          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportar} disabled={exportando}>
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={alExportar} disabled={exportando}>
             {exportando ? 'Exportando…' : 'Exportar Excel'}
           </Button>
         )}
@@ -244,6 +272,14 @@ export default function GastosPage() {
       )}
 
       <VisorBoleta fotos={boleta} onCerrar={() => setBoleta(null)} />
+      <DialogExportar
+        key={dialogoExportar ? 'abierto' : 'cerrado'}
+        abierto={dialogoExportar}
+        descripcion={`${periodoTexto}. Se respetan los locales y el medio de pago elegidos arriba.`}
+        exportando={exportando}
+        onCancelar={() => setDialogoExportar(false)}
+        onExportar={exportar}
+      />
     </Box>
   );
 }
